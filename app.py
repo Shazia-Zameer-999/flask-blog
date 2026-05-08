@@ -478,37 +478,38 @@ def github_callback():
     login_user(user)
     return redirect(url_for("index"))
 
-# @app.route("/login/facebook", methods=["GET", "POST"])
-# def facebook_auth():
-#     redirect_uri = url_for("facebook_callback", _external=True)
-#     return oauth.facebook.authorize_redirect(redirect_uri)
+@app.route("/login/facebook", methods=["GET", "POST"])
+def facebook_auth():
+    redirect_uri = url_for("facebook_callback", _external=True)
+    return oauth.facebook.authorize_redirect(redirect_uri)
 
 
-# @app.route("/auth/facebook/callback")
-# def facebook_callback():
-#     code = request.args.get("code")
-#     token = oauth.facebook.authorize_access_token()
-#     response = oauth.facebook.get("https://openidconnect.googleapis.com/v1/userinfo")
-#     user_info = response.json()
-#     print(user_info)
-#     # user_data = db.users.find_one(
-#     #     {"provider": "facebook", "provider_id": user_info.get("sub")}
-#     # )
-#     # if not user_data:
-#     #     stored_user = db.users.insert_one(
-#     #         {
-#     #             "provider": "google",
-#     #             "provider_id": user_info.get("sub"),
-#     #             "username": user_info.get("name"),
-#     #             "email": user_info.get("email"),
-#     #             "profile_pic": user_info.get("picture"),
-#     #         }
-#     #     )
-#     #     user_data = db.users.find_one({"username": user_info["name"]})
+@app.route("/auth/facebook/callback")
+def facebook_callback():
+    code = request.args.get("code")
+    token = oauth.facebook.authorize_access_token()
+    response = oauth.facebook.get("https://openidconnect.googleapis.com/v1/userinfo")
+    user_info = response.json()
+    print(user_info)
+    
+    # user_data = db.users.find_one(
+    #     {"provider": "facebook", "provider_id": user_info.get("sub")}
+    # )
+    # if not user_data:
+    #     stored_user = db.users.insert_one(
+    #         {
+    #             "provider": "google",
+    #             "provider_id": user_info.get("sub"),
+    #             "username": user_info.get("name"),
+    #             "email": user_info.get("email"),
+    #             "profile_pic": user_info.get("picture"),
+    #         }
+    #     )
+    #     user_data = db.users.find_one({"username": user_info["name"]})
 
-#     # user = User(user_data)
-#     # login_user(user)
-#     return redirect(url_for("index"))
+    # user = User(user_data)
+    # login_user(user)
+    return redirect(url_for("index"))
 
 @app.route("/logout")
 def logout():
