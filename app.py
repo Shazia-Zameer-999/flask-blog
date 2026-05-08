@@ -74,24 +74,16 @@ oauth.register(
     server_metadata_url="https://github.com/login/oauth/.well-known/openid-configuration",
     client_kwargs={"scope": "openid email profile"},
 )
-# oauth.register(
-#     name="facebook",
-#     client_id=app.config["FACEBOOK_CLIENT_ID"],
-#     client_secret=app.config["FACEBOOK_CLIENT_SECRET"],
-#     access_token_url="https://graph.facebook.com/v22.0/oauth/access_token",
-#     authorize_url="https://www.facebook.com/v22.0/dialog/oauth",
-#     api_base_url="https://graph.facebook.com/v22.0/",
-#     client_kwargs={
-#         "scope": "email public_profile",
-#     },
-# )
+
 oauth.register(
     name="facebook",
     client_id=app.config["FACEBOOK_CLIENT_ID"],
     client_secret=app.config["FACEBOOK_CLIENT_SECRET"],
-    server_metadata_url="https://www.facebook.com/.well-known/openid-configuration/",
+    access_token_url="https://graph.facebook.com/v22.0/oauth/access_token",
+    authorize_url="https://www.facebook.com/v22.0/dialog/oauth",
+    api_base_url="https://graph.facebook.com/v22.0/",
     client_kwargs={
-        "scope": "openid email public_profile",
+        "scope": "email public_profile",
     },
 )
 
@@ -487,9 +479,10 @@ def facebook_auth():
 
 @app.route("/auth/facebook/callback")
 def facebook_callback():
-    code = request.args.get("code")
     token = oauth.facebook.authorize_access_token()
+
     response = oauth.facebook.get("me?fields=id,name,email,picture")
+
     user_info = response.json()
 
     user_data = db.users.find_one(
@@ -502,7 +495,7 @@ def facebook_callback():
                 "provider_id": user_info.get("id"),
                 "username": user_info.get("name"),
                 "email": user_info.get("email"),
-                "profile_pic": user_info.get("picture"),
+                "profile_pic": user_info["picture"]["data"]["url"],
             }
         )
         user_data = db.users.find_one({"username": user_info["name"]})
