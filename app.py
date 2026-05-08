@@ -83,7 +83,7 @@ oauth.register(
     authorize_url="https://www.facebook.com/v22.0/dialog/oauth",
     api_base_url="https://graph.facebook.com/v22.0/",
     client_kwargs={
-        "scope": "email public_profile",
+        "scope": "email,public_profile",
     },
 )
 
