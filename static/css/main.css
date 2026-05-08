@@ -1,13 +1,15 @@
-
 /* Fonts */
 :root {
-  --default-font: "EB Garamond",  system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-  --heading-font: "EB Garamond",  sans-serif;
-  --nav-font: "Inter",  sans-serif;
+  --default-font:
+    "EB Garamond", system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --heading-font: "EB Garamond", sans-serif;
+  --nav-font: "Inter", sans-serif;
 }
 
 /* Global Colors - The following color variables are used throughout the website. Updating them here will change the color scheme of the entire website */
-:root { 
+:root {
   --background-color: #ffffff; /* Background color for the entire website, including individual sections */
   --default-color: #212529; /* Default color used for the majority of the text content across the entire website */
   --heading-color: #535353; /* Color for headings, subheadings and title throughout the website */
@@ -18,7 +20,7 @@
 
 /* Nav Menu Colors - The following color variables are used specifically for the navigation menu. They are separate from the global colors to allow for more customization options */
 :root {
-  --nav-color: #6a6a6a;  /* The default color of the main navmenu links */
+  --nav-color: #6a6a6a; /* The default color of the main navmenu links */
   --nav-hover-color: #465367; /* Applied to main navmenu links when they are hovered over or active */
   --nav-mobile-background-color: #ffffff; /* Used as the background color for mobile navigation menu */
   --nav-dropdown-background-color: #ffffff; /* Used as the background color for dropdown items that appear when hovering over primary navigation items */
@@ -237,7 +239,7 @@ h6 {
     padding-right: 0;
   }
 
-  .navmenu li:hover>a,
+  .navmenu li:hover > a,
   .navmenu .active,
   .navmenu .active:focus {
     color: var(--nav-hover-color);
@@ -276,11 +278,11 @@ h6 {
 
   .navmenu .dropdown ul a:hover,
   .navmenu .dropdown ul .active:hover,
-  .navmenu .dropdown ul li:hover>a {
+  .navmenu .dropdown ul li:hover > a {
     color: var(--nav-dropdown-hover-color);
   }
 
-  .navmenu .dropdown:hover>ul {
+  .navmenu .dropdown:hover > ul {
     opacity: 1;
     top: 100%;
     visibility: visible;
@@ -292,7 +294,7 @@ h6 {
     visibility: hidden;
   }
 
-  .navmenu .dropdown .dropdown:hover>ul {
+  .navmenu .dropdown .dropdown:hover > ul {
     opacity: 1;
     top: 0;
     left: -100%;
@@ -395,7 +397,7 @@ h6 {
     background-color: rgba(33, 37, 41, 0.1);
   }
 
-  .navmenu .dropdown>.dropdown-active {
+  .navmenu .dropdown > .dropdown-active {
     display: block;
     background-color: rgba(33, 37, 41, 0.03);
   }
@@ -422,7 +424,7 @@ h6 {
     transition: 0.3s;
   }
 
-  .mobile-nav-active .navmenu>ul {
+  .mobile-nav-active .navmenu > ul {
     display: block;
   }
 }
@@ -439,7 +441,8 @@ h6 {
 
 .footer .footer-top {
   padding-top: 50px;
-  border-top: 1px solid color-mix(in srgb, var(--default-color), transparent 90%);
+  border-top: 1px solid
+    color-mix(in srgb, var(--default-color), transparent 90%);
 }
 
 .footer .footer-about .logo {
@@ -533,7 +536,8 @@ h6 {
 
 .footer .copyright {
   padding: 25px 0;
-  border-top: 1px solid color-mix(in srgb, var(--default-color), transparent 90%);
+  border-top: 1px solid
+    color-mix(in srgb, var(--default-color), transparent 90%);
 }
 
 .footer .copyright p {
@@ -634,7 +638,8 @@ h6 {
   background-color: var(--background-color);
   padding: 25px 0;
   position: relative;
-  border-bottom: 1px solid color-mix(in srgb, var(--default-color), transparent 90%);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--default-color), transparent 90%);
 }
 
 .page-title h1 {
@@ -652,11 +657,11 @@ h6 {
   font-weight: 400;
 }
 
-.page-title .breadcrumbs ol li+li {
+.page-title .breadcrumbs ol li + li {
   padding-left: 10px;
 }
 
-.page-title .breadcrumbs ol li+li::before {
+.page-title .breadcrumbs ol li + li::before {
   content: "/";
   display: inline-block;
   padding-right: 10px;
@@ -676,7 +681,6 @@ section,
 }
 
 @media (max-width: 1199px) {
-
   section,
   .section {
     scroll-margin-top: 66px;
@@ -754,6 +758,82 @@ section,
   background: color-mix(in srgb, var(--background-color), transparent 50%);
 }
 
+/* added in extra */
+.policy-section:not(:last-child) {
+            border-bottom: 1px solid #dee2e6;
+        }
+        .toc-link {
+            color: inherit;
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        .toc-link:hover {
+            color: #0d6efd;
+        }
+body,
+html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    font-family: Arial, sans-serif;
+}
+
+/* Parallax-like Effect */
+.bg-parallax {
+    background-image: url('https://images.unsplash.com/photo-1506744038136-46273834b3fb');
+    background-attachment: fixed;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+    height: 500px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    text-align: center;
+}
+
+h2,
+p {
+    margin: 0;
+}
+.bg-image {
+    background-image: url('https://res.cloudinary.com/dlojdy19d/image/upload/v1778063909/__2_zl6f2s.jpg');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    position: relative;
+    color: white;
+    height: 100vh;
+}
+
+/* Overlay effect */
+.bg-image::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+.content {
+    position: relative;
+    z-index: 2;
+}
+.display-4 {
+    color: white;
+}
+.btn{
+  background: #000;
+  color: white;
+  border: none;
+}
+.btn:hover{
+  background: #333;
+  color: white;
+}
 @media (max-width: 575px) {
   .slider .swiper-slide {
     min-height: 300px;
@@ -819,7 +899,11 @@ section,
 }
 
 .trending-category .custom-border {
-  border-color: color-mix(in srgb, var(--default-color), transparent 90%) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--default-color),
+    transparent 90%
+  ) !important;
 }
 
 @media (max-width: 768px) {
@@ -849,10 +933,11 @@ section,
   border: 1px solid color-mix(in srgb, var(--default-color), transparent 90%);
 }
 
-.trending-category .trending>h3 {
+.trending-category .trending > h3 {
   color: var(--default-color);
   padding: 20px;
-  border-bottom: 1px solid color-mix(in srgb, var(--default-color), transparent 90%);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--default-color), transparent 90%);
 }
 
 .trending-category .trending .trending-post {
@@ -870,7 +955,8 @@ section,
 .trending-category .trending .trending-post li a {
   display: block;
   padding: 20px;
-  border-bottom: 1px solid color-mix(in srgb, var(--default-color), transparent 90%);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--default-color), transparent 90%);
   position: relative;
   overflow: hidden;
   z-index: 2;
@@ -957,7 +1043,11 @@ section,
 }
 
 .culture-category .border-bottom {
-  border-color: color-mix(in srgb, var(--default-color), transparent 90%) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--default-color),
+    transparent 90%
+  ) !important;
 }
 
 .culture-category .post-meta {
@@ -1064,7 +1154,11 @@ section,
 }
 
 .business-category .border-bottom {
-  border-color: color-mix(in srgb, var(--default-color), transparent 90%) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--default-color),
+    transparent 90%
+  ) !important;
 }
 
 .business-category .post-meta {
@@ -1152,7 +1246,11 @@ section,
 
 .lifestyle-category .custom-border,
 .lifestyle-category .border-bottom {
-  border-color: color-mix(in srgb, var(--default-color), transparent 90%) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--default-color),
+    transparent 90%
+  ) !important;
 }
 
 .lifestyle-category .post-list {
@@ -1373,7 +1471,7 @@ section,
   color: var(--contrast-color);
 }
 
-.team .team-member .social a+a {
+.team .team-member .social a + a {
   margin-left: 8px;
 }
 
@@ -1464,7 +1562,7 @@ section,
   margin: 0;
 }
 
-.blog-details .meta-top ul li+li {
+.blog-details .meta-top ul li + li {
   padding-left: 20px;
 }
 
@@ -1484,7 +1582,8 @@ section,
 
 .blog-details .meta-bottom {
   padding-top: 10px;
-  border-top: 1px solid color-mix(in srgb, var(--default-color), transparent 90%);
+  border-top: 1px solid
+    color-mix(in srgb, var(--default-color), transparent 90%);
 }
 
 .blog-details .meta-bottom i {
@@ -1523,7 +1622,7 @@ section,
   display: inline-block;
 }
 
-.blog-details .meta-bottom .tags li+li::before {
+.blog-details .meta-bottom .tags li + li::before {
   padding-right: 6px;
   color: var(--default-color);
   content: ",";
@@ -1799,7 +1898,7 @@ section,
 /*--------------------------------------------------------------
 # Contact Section
 --------------------------------------------------------------*/
-.contact .info-item+.info-item {
+.contact .info-item + .info-item {
   margin-top: 40px;
 }
 
@@ -1834,31 +1933,35 @@ section,
   height: 100%;
 }
 
-.contact .php-email-form input[type=text],
-.contact .php-email-form input[type=email],
+.contact .php-email-form input[type="text"],
+.contact .php-email-form input[type="email"],
 .contact .php-email-form textarea {
   font-size: 14px;
   padding: 10px 15px;
   box-shadow: none;
   border-radius: 0;
   color: var(--default-color);
-  background-color: color-mix(in srgb, var(--background-color), transparent 50%);
+  background-color: color-mix(
+    in srgb,
+    var(--background-color),
+    transparent 50%
+  );
   border-color: color-mix(in srgb, var(--default-color), transparent 80%);
 }
 
-.contact .php-email-form input[type=text]:focus,
-.contact .php-email-form input[type=email]:focus,
+.contact .php-email-form input[type="text"]:focus,
+.contact .php-email-form input[type="email"]:focus,
 .contact .php-email-form textarea:focus {
   border-color: var(--accent-color);
 }
 
-.contact .php-email-form input[type=text]::placeholder,
-.contact .php-email-form input[type=email]::placeholder,
+.contact .php-email-form input[type="text"]::placeholder,
+.contact .php-email-form input[type="email"]::placeholder,
 .contact .php-email-form textarea::placeholder {
   color: color-mix(in srgb, var(--default-color), transparent 70%);
 }
 
-.contact .php-email-form button[type=submit] {
+.contact .php-email-form button[type="submit"] {
   color: var(--contrast-color);
   background: var(--accent-color);
   border: 0;
@@ -1867,7 +1970,7 @@ section,
   border-radius: 4px;
 }
 
-.contact .php-email-form button[type=submit]:hover {
+.contact .php-email-form button[type="submit"]:hover {
   background: color-mix(in srgb, var(--accent-color), transparent 20%);
 }
 
@@ -1941,7 +2044,7 @@ section,
   transition: 0.3s;
 }
 
-.search-widget form input[type=text] {
+.search-widget form input[type="text"] {
   border: 0;
   padding: 4px 10px;
   border-radius: 4px;
@@ -1950,7 +2053,7 @@ section,
   color: var(--default-color);
 }
 
-.search-widget form input[type=text]:focus {
+.search-widget form input[type="text"]:focus {
   outline: none;
 }
 

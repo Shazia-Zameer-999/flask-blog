@@ -1,299 +1,517 @@
-from flask import Flask, redirect,render_template, request, url_for
+from flask import Flask, redirect, render_template, request, url_for
 import os
+from bson import ObjectId
 from pymongo import MongoClient
 from dotenv import load_dotenv
 from flask_bootstrap import Bootstrap5
-from flask_wtf import FlaskForm,CSRFProtect
-from wtforms import StringField, SubmitField, TextAreaField
+from flask_wtf import FlaskForm, CSRFProtect
+from wtforms import StringField, SubmitField, TextAreaField, PasswordField
 from wtforms.validators import DataRequired, Email, Length, URL
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import (
+    LoginManager,
+    UserMixin,
+    login_user,
+    logout_user,
+    login_required,
+    current_user,
+)
+from authlib.integrations.flask_client import OAuth
+import requests
+from flask import session
+import secrets
 
-#loading the configuration from .env file
+# loading the configuration from .env file
 load_dotenv()
 
-#making the application instance
-app=Flask(__name__)
-#storing the configuration in variables
-app.config['MONGO_URI']=os.getenv("MONGO_URI")
-app.config['SECRET_KEY']=os.getenv("SECRET_KEY")
 
-#connecting to the databases- database and collection creation
-def get_db():
-    client = MongoClient(app.config['MONGO_URI'])
-    return client['content']
+# making the application instance
+app = Flask(__name__)
+# storing the configuration in variables
+app.config["MONGO_URI"] = os.getenv("MONGO_URI")
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")
+app.config["GOOGLE_CLIENT_ID"] = os.getenv("GOOGLE_CLIENT_ID")
+app.config["GOOGLE_CLIENT_SECRET"] = os.getenv("GOOGLE_CLIENT_SECRET")
+app.config["LINKEDIN_CLIENT_ID"] = os.getenv("LINKEDIN_CLIENT_ID")
+app.config["LINKEDIN_CLIENT_SECRET"] = os.getenv("LINKEDIN_CLIENT_SECRET")
+app.config["GITHUB_CLIENT_ID"] = os.getenv("GITHUB_CLIENT_ID")
+app.config["GITHUB_CLIENT_SECRET"] = os.getenv("GITHUB_CLIENT_SECRET")
 
-#printing random secret key for security purposes
+# connecting to the databases- database and collection creation
+client = MongoClient(app.config["MONGO_URI"])
+db = client["content"]
+bootstrap = Bootstrap5(app)
+csrf = CSRFProtect(app)
+login_manager = LoginManager(app)
+login_manager.init_app(app)
+login_manager.login_view = "login"
+oauth = OAuth(app)
 
-Bootstrap5(app)
-csrf=CSRFProtect(app)
+oauth.register(
+    name="google",
+    client_id=app.config["GOOGLE_CLIENT_ID"],
+    client_secret=app.config["GOOGLE_CLIENT_SECRET"],
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={"scope": "openid email profile"},
+)
+oauth.register(
+    name="linkedin",
+    client_id=app.config["LINKEDIN_CLIENT_ID"],
+    client_secret=app.config["LINKEDIN_CLIENT_SECRET"],
+    server_metadata_url="https://www.linkedin.com/oauth/.well-known/openid-configuration",
+    client_kwargs={
+        "scope": "openid profile email",
+        "token_endpoint_auth_method": "client_secret_post",
+    },
+)
+oauth.register(
+    name="github",
+    clint_id=app.config["GITHUB_CLIENT_ID"],
+    client_secret=app.config["GITHUB_CLIENT_SECRET"],
+    server_metadata_url="https://github.com/login/oauth/.well-known/openid-configuration",
+    client_kwargs={"scope": "openid email profile"},
+)
+# oauth.register(
+#     name="facebook",
+#     client_id=app.config["FACEBOOK_CLIENT_ID"],
+#     client_secret=app.config["FACEBOOK_CLIENT_SECRET"],
+#     access_token_url="https://graph.facebook.com/v22.0/oauth/access_token",
+#     authorize_url="https://www.facebook.com/v22.0/dialog/oauth",
+#     api_base_url="https://graph.facebook.com/v22.0/",
+#     client_kwargs={
+#         "scope": "email public_profile",
+#     },
+# )
+oauth.register(
+    name="facebook",
+    client_id=app.config["FACEBOOK_CLIENT_ID"],
+    client_secret=app.config["FACEBOOK_CLIENT_SECRET"],
+    server_metadata_url="https://www.facebook.com/.well-known/openid-configuration/",
+    client_kwargs={
+        "scope": "openid email public_profile",
+    },
+)
+
 
 class CommentForm(FlaskForm):
-    username=StringField('Username', validators=[DataRequired(), Length(min=3)],render_kw={"placeholder": "Enter your name"})
-    email=StringField('Email', validators=[DataRequired(),Email()])
-    website=StringField('Website', validators=[URL(require_tld=True, message='Please enter a valid URL.')], default='')
-    comment=TextAreaField('Comment', validators=[DataRequired(), Length(min=10)])
-    image_url=StringField('Image URL', validators=[URL(require_tld=True, message='Please enter a valid URL.')], default='')
-    submit=SubmitField('Submit')
+    username = StringField(
+        "Username",
+        validators=[DataRequired(), Length(min=3)],
+        render_kw={"placeholder": "Enter your name"},
+    )
+    email = StringField("Email", validators=[DataRequired(), Email()])
+    website = StringField(
+        "Website",
+        validators=[URL(require_tld=True, message="Please enter a valid URL.")],
+        default="",
+    )
+    comment = TextAreaField("Comment", validators=[DataRequired(), Length(min=10)])
+    image_url = StringField(
+        "Image URL",
+        validators=[URL(require_tld=True, message="Please enter a valid URL.")],
+        default="",
+    )
+    submit = SubmitField("Submit")
+
 
 class ContactForm(FlaskForm):
 
-    name=StringField('Name', validators=[DataRequired(), Length(min=3)],render_kw={"placeholder": "Your Name"})
-    email=StringField('Email', validators=[DataRequired(),Email()],render_kw={"placeholder": "Your Email"})
-    subject=StringField('Subject', validators=[DataRequired()],render_kw={"placeholder": "Your Subject"})
-    message=TextAreaField('Message', validators=[DataRequired(), Length(min=5)],render_kw={"placeholder": "Your Message"})
-    submit=SubmitField('Submit')
+    name = StringField(
+        "Name",
+        validators=[DataRequired(), Length(min=3)],
+        render_kw={"placeholder": "Your Name"},
+    )
+    email = StringField(
+        "Email",
+        validators=[DataRequired(), Email()],
+        render_kw={"placeholder": "Your Email"},
+    )
+    subject = StringField(
+        "Subject",
+        validators=[DataRequired()],
+        render_kw={"placeholder": "Your Subject"},
+    )
+    message = TextAreaField(
+        "Message",
+        validators=[DataRequired(), Length(min=5)],
+        render_kw={"placeholder": "Your Message"},
+    )
+    submit = SubmitField("Submit")
 
 
-#routs started here
-@app.route('/')
+class SignupForm(FlaskForm):
+    username = StringField(
+        "Username",
+        validators=[DataRequired(), Length(min=3)],
+        render_kw={"placeholder": "Enter your username"},
+    )
+    password = PasswordField(
+        "Password",
+        validators=[DataRequired(), Length(min=3)],
+        render_kw={"placeholder": "Enter your password"},
+    )
+    submit = SubmitField("Sign Up")
+
+
+class LoginForm(FlaskForm):
+    username = StringField(
+        "Username",
+        validators=[DataRequired(), Length(min=3)],
+        render_kw={"placeholder": "Enter your username"},
+    )
+    password = PasswordField(
+        "Password",
+        validators=[DataRequired(), Length(min=3)],
+        render_kw={"placeholder": "Enter your password"},
+    )
+    submit = SubmitField("Log In")
+
+
+class User(UserMixin):
+    def __init__(self, user_data):
+        self.id = str(user_data["_id"])
+        self.username = user_data["username"]
+        self.provider = user_data["provider"]
+        self.provider_id = user_data["provider_id"]
+        self.email = user_data["email"]
+        self.profile_pic = user_data["profile_pic"]
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    if user_id:
+        user_data = db.users.find_one({"_id": ObjectId(user_id)})
+        return User(user_data) if user_data else None
+    else:
+        print("user_id not found")
+
+
+# routs started here
+@app.route("/")
 def index():
-    db = get_db()
-    collection1=db['swiperData']
-    if collection1.count_documents({})==0:
+    collection1 = db["swiperData"]
+    if collection1.count_documents({}) == 0:
 
-            collection1.insert_many([
-            {
-                "title":"The Best Homemade Masks for Face (keep the Pimples Away)",
-                "description":"Lorem ipsum dolor sit amet, consectetur adipisicing elit. Quidem neque est mollitia! Beatae minima assumenda repellat harum vero, officiis ipsam magnam obcaecati cumque maxime inventore repudiandae quidem necessitatibus rem atque.",
-                "image_url": url_for('static', filename='img/post-slide-1.jpg')
-            },
-            {
-                "title":"10 Best Nutrition Tips for a Healthy Lifestyle",
-                "description":"Lorem ipsum dolor sit amet, consectetur adipisicing elit. Quidem neque est mollitia! Beatae minima assumenda repellat harum vero, officiis ipsam magnam obcaecati cumque maxime inventore repudiandae quidem necessitatibus rem atque.",
-                "image_url": url_for('static', filename='img/post-slide-2.jpg')
-            },
-            {
-                "title":"The Ultimate Guide to Homemade Masks for Face",
-                "description":"Lorem ipsum dolor sit amet, consectetur adipisicing elit. Quidem neque est mollitia! Beatae minima assumenda repellat harum vero, officiis ipsam magnam obcaecati cumque maxime inventore repudiandae quidem necessitatibus rem atque.",
-                "image_url": url_for('static', filename='img/post-slide-3.jpg')
-            },
-            {
-                "title":"5 Easy Ways to Stay Fit and Healthy",
-                "description":"Lorem ipsum dolor sit amet, consectetur adipisicing elit. Quidem neque est mollitia! Beatae minima assumenda repellat harum vero, officiis ipsam magnam obcaecati cumque maxime inventore repudiandae quidem necessitatibus rem atque.",
-                "image_url": url_for('static', filename='img/post-slide-4.jpg')
-            }
-            ])
+        collection1.insert_many(
+            [
+                {
+                    "title": "The Best Homemade Masks for Face (keep the Pimples Away)",
+                    "description": "Lorem ipsum dolor sit amet, consectetur adipisicing elit. Quidem neque est mollitia! Beatae minima assumenda repellat harum vero, officiis ipsam magnam obcaecati cumque maxime inventore repudiandae quidem necessitatibus rem atque.",
+                    "image_url": url_for("static", filename="img/post-slide-1.jpg"),
+                },
+                {
+                    "title": "10 Best Nutrition Tips for a Healthy Lifestyle",
+                    "description": "Lorem ipsum dolor sit amet, consectetur adipisicing elit. Quidem neque est mollitia! Beatae minima assumenda repellat harum vero, officiis ipsam magnam obcaecati cumque maxime inventore repudiandae quidem necessitatibus rem atque.",
+                    "image_url": url_for("static", filename="img/post-slide-2.jpg"),
+                },
+                {
+                    "title": "The Ultimate Guide to Homemade Masks for Face",
+                    "description": "Lorem ipsum dolor sit amet, consectetur adipisicing elit. Quidem neque est mollitia! Beatae minima assumenda repellat harum vero, officiis ipsam magnam obcaecati cumque maxime inventore repudiandae quidem necessitatibus rem atque.",
+                    "image_url": url_for("static", filename="img/post-slide-3.jpg"),
+                },
+                {
+                    "title": "5 Easy Ways to Stay Fit and Healthy",
+                    "description": "Lorem ipsum dolor sit amet, consectetur adipisicing elit. Quidem neque est mollitia! Beatae minima assumenda repellat harum vero, officiis ipsam magnam obcaecati cumque maxime inventore repudiandae quidem necessitatibus rem atque.",
+                    "image_url": url_for("static", filename="img/post-slide-4.jpg"),
+                },
+            ]
+        )
 
-    data=collection1.find()
-    
-    return render_template('index.html', slides=data)
+    data = collection1.find()
 
-@app.route('/about')
+    return render_template("index.html", slides=data)
+
+
+@app.route("/about")
 def about():
-    db = get_db()
-    collection2=db['teamMembers']
-    if collection2.count_documents({})==0:
-         collection2.insert_many([
-              {
-                   "name":"John Doe",
-                     "position":"Founder & CEO",
-                     "description":"Explicabo voluptatem mollitia et repellat qui dolorum quasi",
-                        "image_url": url_for('static', filename='img/team/team-1.jpg')
-                   
-              },
+    collection2 = db["teamMembers"]
+    if collection2.count_documents({}) == 0:
+        collection2.insert_many(
+            [
                 {
-                     "name":"Jane Smith",
-                         "position":"Chief Editor",
-                         "description":"Explicabo voluptatem mollitia et repellat qui dolorum quasi",
-                            "image_url": url_for('static', filename='img/team/team-2.jpg')
-                     
+                    "name": "John Doe",
+                    "position": "Founder & CEO",
+                    "description": "Explicabo voluptatem mollitia et repellat qui dolorum quasi",
+                    "image_url": url_for("static", filename="img/team/team-1.jpg"),
                 },
                 {
-                     "name":"Mike Johnson",
-                         "position":"Content Manager",
-                         "description":"Explicabo voluptatem mollitia et repellat qui dolorum quasi",
-                            "image_url": url_for('static', filename='img/team/team-3.jpg')
-                     
+                    "name": "Jane Smith",
+                    "position": "Chief Editor",
+                    "description": "Explicabo voluptatem mollitia et repellat qui dolorum quasi",
+                    "image_url": url_for("static", filename="img/team/team-2.jpg"),
                 },
                 {
-                     "name":"Emily Davis",
-                         "position":"Marketing Specialist",
-                         "description":"Explicabo voluptatem mollitia et repellat qui dolorum quasi",
-                            "image_url": url_for('static', filename='img/team/team-4.jpg')
-                     
+                    "name": "Mike Johnson",
+                    "position": "Content Manager",
+                    "description": "Explicabo voluptatem mollitia et repellat qui dolorum quasi",
+                    "image_url": url_for("static", filename="img/team/team-3.jpg"),
                 },
-                    {
-                        "name":"David Wilson",
-                            "position":"Graphic Designer",
-                            "description":"Explicabo voluptatem mollitia et repellat qui dolorum quasi",
-                                "image_url": url_for('static', filename='img/team/team-5.jpg')
-                        
-                    },
-                    {
-                        "name":"Sarah Brown",
-                            "position":"Social Media Manager",
-                            "description":"Explicabo voluptatem mollitia et repellat qui dolorum quasi",
-                                "image_url": url_for('static', filename='img/team/team-6.jpg')
-                        
-                    }
-         ])
-    data=collection2.find()
-    
-    return render_template('about.html', team_members=data)
+                {
+                    "name": "Emily Davis",
+                    "position": "Marketing Specialist",
+                    "description": "Explicabo voluptatem mollitia et repellat qui dolorum quasi",
+                    "image_url": url_for("static", filename="img/team/team-4.jpg"),
+                },
+                {
+                    "name": "David Wilson",
+                    "position": "Graphic Designer",
+                    "description": "Explicabo voluptatem mollitia et repellat qui dolorum quasi",
+                    "image_url": url_for("static", filename="img/team/team-5.jpg"),
+                },
+                {
+                    "name": "Sarah Brown",
+                    "position": "Social Media Manager",
+                    "description": "Explicabo voluptatem mollitia et repellat qui dolorum quasi",
+                    "image_url": url_for("static", filename="img/team/team-6.jpg"),
+                },
+            ]
+        )
+    data = collection2.find()
 
-@app.route('/contact',methods=['GET','POST'])
+    return render_template("about.html", team_members=data)
+
+
+@app.route("/contact", methods=["GET", "POST"])
 def contact():
-
-    print(request.method)
-    form=ContactForm()
-    
+    form = ContactForm()
     if form.validate_on_submit():
-        db=get_db()
-        collection=db['contact']
-        if collection.find_one({'email':form.email.data}) is None:
-            collection.insert_one({
-                "name":form.name.data,
-                "email":form.email.data,
-                "subject":form.subject.data,
-                "message":form.message.data
-            })
-            return redirect(url_for('contact'))
-        
-    return render_template('contact.html',form=form)
+        collection = db["contact"]
+        if collection.find_one({"email": form.email.data}) is None:
+            collection.insert_one(
+                {
+                    "name": form.name.data,
+                    "email": form.email.data,
+                    "subject": form.subject.data,
+                    "message": form.message.data,
+                }
+            )
+            return redirect(url_for("contact"))
 
-# @app.route('/contact',methods=['GET','POST'])
-# @csrf.exempt
-# def contact():
-
-#     print(request.method)
-
-#     if request.method=='POST':
-#         name=request.form.get('name')
-#         email=request.form.get('email')
-#         subject=request.form.get('subject')
-#         message=request.form.get('message')
-#         db=get_db()
-#         collection=db['contact']
-#         if collection.find_one({'email':email}) is None:
-#             collection.insert_one({
-#                 "name":name,
-#                 "email":email,
-#                 "subject":subject,
-#                 "message":message
-#             })
-#             print(request.method)
-#             return redirect(url_for('contact'))
-#     return render_template('contact.html')
-
-# @app.route('/contact')
-# @csrf.exempt
-# def contact():
-#     return render_template('contact.html')
+    return render_template("contact.html", form=form)
 
 
-# @app.post('/contact')
-# @csrf.exempt
-# def contact_data():
-#     name=request.form.get('name')
-#     email=request.form.get('email')
-#     subject=request.form.get('subject')
-#     message=request.form.get('message')
-#     db=get_db()
-#     collection=db['contact']
-#     if collection.find_one({'email':email}) is None:
-#         collection.insert_one({
-#             "name":name,
-#             "email":email,
-#             "subject":subject,
-#             "message":message
-#         })
-#         return redirect(url_for('contact'))
-#     return render_template('contact.html')
-
-
-
-@app.route('/category')
+@app.route("/category")
 def category():
-    return render_template('category.html')
+    return render_template("category.html")
 
-@app.route('/single-post' , methods=['GET','POST'])
+
+@app.route("/single-post", methods=["GET", "POST"])
 def single_post():
-    db = get_db()
-    collection4=db['comments']
-    comments=collection4.find()
-
-    form=CommentForm()
+    comments = list(db.comments.find())
+    form = CommentForm()
     if form.validate_on_submit():
-        # collection4=db['comments']
-        if collection4.find_one({'email':form.email.data}) is None:
-            collection4.insert_one({
-                "username":form.username.data,
-                "email":form.email.data,
-                "website":form.website.data,
-                "comment":form.comment.data,
-                "image_url":form.image_url.data
-            })
-            return redirect(url_for('single_post'))
-    count = collection4.count_documents({})
+        db.comments.insert_one(
+            {
+                "username": form.username.data,
+                "email": form.email.data,
+                "website": form.website.data,
+                "comment": form.comment.data,
+                "image_url": form.image_url.data
+                or url_for("static", filename="img/default.jpg"),
+            }
+        )
+        return redirect(url_for("single_post"))
 
-    return render_template('single-post.html', comments=comments,form=form,count=count)
+    count = db.comments.count_documents({})
 
-# @app.post('/single-post')
-# def single_post_data():
-#     # name=request.form.get('username')
-#     # email=request.form.get('email')
-#     # website=request.form.get('website')
-#     # comment=request.form.get('comment')
-#     # image_url=request.form.get('img_url')
-
-#     # if image_url=='':
-#     #     image_url=url_for('static', filename='img/blog/comments-1.jpg')
-
-#     # errors=[]
-#     # if name=='' or email=='' or comment=='':
-#     #     errors.append("Please fill in all required fields.")
-#     # if '@' not in email:
-#     #     errors.append("Please enter a valid email address.")
-#     # if len(comment)<10:
-#     #     errors.append("Comment must be at least 10 characters long.")
-#     # if len(name)<3:
-#     #     errors.append("Name must be at least 3 characters long.")    
-#     # if len(website)>0 and not website.startswith(('http://', 'https://')):
-#     #     errors.append("Please enter a valid website URL (starting with http:// or https://).")
-
-#     # if errors:
-#     #     comments=list(db['comments'].find())
-#     #     return render_template('single-post.html', errors=errors,comments=comments)
-#     # db = get_db()
-#     # collection4=db['comments']
-#     # if collection4.find_one({'email':email}) is None:
-#     #     collection4.insert_one({
-#     #         "username":name,
-#     #         "email":email,
-#     #         "website":website,
-#     #         "comment":comment,
-#     #         "image_url":image_url
-#     #     })
+    return render_template(
+        "single-post.html", comments=comments, form=form, count=count
+    )
 
 
-#     # print(name,email,website,comment,image_url)
-
-#     #call the form function which we made as a class
-#     form=CommentForm()
-
-#     #if validation is done and there is no error
-    
-
-#     db=get_db()
-#     if form.validate_on_submit():
-#         collection4=db['comments']
-#         if collection4.find_one({'email':form.email.data}) is None:
-#             collection4.insert_one({
-#                 "username":form.username.data,
-#                 "email":form.email.data,
-#                 "website":form.website.data,
-#                 "comment":form.comment.data,
-#                 "image_url":form.image_url.data
-#             })
-#             return redirect(url_for('single_post'))
-        
-#         #if the validation failed!
-#         #again connect to db and fetch the previous comments and render the page with errors and the previous comments
-#     comments=list(db['comments'].find())
-#     return render_template('single-post.html', form=form, comments=comments)
-
-@app.route('/starter-page')
+@app.route("/starter-page")
 def starter_page():
-    return render_template('starter-page.html')
+    return render_template("starter-page.html")
+
+
+@app.route("/privacy-policy")
+def privacy_policy():
+    return render_template("privacy_policy.html")
+
+
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+    form = SignupForm()
+    if form.validate_on_submit():
+        username = form.username.data.lower()
+        password = form.password.data
+        hashed_password = generate_password_hash(
+            password, method="scrypt", salt_length=16
+        )
+        existing_user = db.users.find_one({"username": username})
+        if existing_user:
+            return redirect(url_for("signup"))
+        signup_data = db.users.insert_one(
+            {"username": username, "password": hashed_password}
+        )
+        return redirect(url_for("login"))
+    return render_template("signup.html", form=form)
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    form = LoginForm()
+    if form.validate_on_submit():
+        username = form.username.data
+        password = form.password.data
+        user_data = db.users.find_one({"username": username})
+        if user_data and check_password_hash(user_data["password"], password):
+            user = User(user_data)
+            login_user(user)
+            return redirect(url_for("index"))
+    return render_template("login.html", form=form)
+
+
+@app.route("/login/google", methods=["GET", "POST"])
+def google_auth():
+    redirect_uri = url_for("google_callback", _external=True)
+    return oauth.google.authorize_redirect(redirect_uri)
+
+
+@app.route("/auth/google/callback")
+def google_callback():
+    code = request.args.get("code")
+    token = oauth.google.authorize_access_token()
+    response = oauth.google.get("https://openidconnect.googleapis.com/v1/userinfo")
+    user_info = response.json()
+    user_data = db.users.find_one(
+        {"provider": "google", "provider_id": user_info.get("sub")}
+    )
+    if not user_data:
+        stored_user = db.users.insert_one(
+            {
+                "provider": "google",
+                "provider_id": user_info.get("sub"),
+                "username": user_info.get("name"),
+                "email": user_info.get("email"),
+                "profile_pic": user_info.get("picture"),
+            }
+        )
+        user_data = db.users.find_one({"username": user_info["name"]})
+
+    user = User(user_data)
+    login_user(user)
+    return redirect(url_for("index"))
+
+
+@app.route("/login/linkedin", methods=["GET", "POST"])
+def linkedin_auth():
+    redirect_uri = url_for("linkedin_callback", _external=True)
+    return oauth.linkedin.authorize_redirect(redirect_uri)
+
+
+@app.route("/auth/linkedin/callback")
+def linkedin_callback():
+    code = request.args.get("code")
+    redirect_uri = url_for("linkedin_callback", _external=True)
+    token_response = requests.post(
+        "https://www.linkedin.com/oauth/v2/accessToken",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": app.config["LINKEDIN_CLIENT_ID"],
+            "client_secret": app.config["LINKEDIN_CLIENT_SECRET"],
+        },
+    )
+    token_data = token_response.json()
+    access_token = token_data["access_token"]
+    user_response = requests.get(
+        "https://api.linkedin.com/v2/userinfo",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    user_info = user_response.json()
+    user_data = db.users.find_one(
+        {"provider": "linkedin", "provider_id": user_info.get("sub")}
+    )
+    if not user_data:
+        stored_user = db.users.insert_one(
+            {
+                "provider": "linkedin",
+                "provider_id": user_info.get("sub"),
+                "username": user_info.get("name"),
+                "email": user_info.get("email"),
+                "profile_pic": user_info.get("picture"),
+            }
+        )
+        user_data = db.users.find_one({"username": user_info["name"]})
+
+    user = User(user_data)
+    login_user(user)
+    print("profile_pic", current_user.profile_pic)
+    return redirect(url_for("index"))
+
+
+@app.route("/login/github")
+def github_auth():
+    redirect_uri = url_for("github_callback", _external=True)
+    return oauth.github.authorize_redirect(redirect_uri)
+
+
+@app.route("/auth/github/callback")
+def github_callback():
+    code = request.args.get("code")
+    token = oauth.github.authorize_access_token()
+    response = oauth.github.get("https://api.github.com/user")
+    user_info = response.json()
+    print("user_info", user_info)
+    existing_user = db.users.find_one(
+        {"provider": "github", "provider_id": user_info.get("id")}
+    )
+    if not existing_user:
+        db.users.insert_one(
+            {
+                "provider": "github",
+                "provider_id": user_info.get("id"),
+                "username": user_info.get("name"),
+                "email": user_info.get("email"),
+                "profile_pic": user_info.get("avatar_url"),
+            }
+        )
+    user_data = db.users.find_one(
+        {"provider": "github", "provider_id": user_info.get("id")}
+    )
+    user = User(user_data)
+    login_user(user)
+    return redirect(url_for("index"))
+
+# @app.route("/login/facebook", methods=["GET", "POST"])
+# def facebook_auth():
+#     redirect_uri = url_for("facebook_callback", _external=True)
+#     return oauth.facebook.authorize_redirect(redirect_uri)
+
+
+# @app.route("/auth/facebook/callback")
+# def facebook_callback():
+#     code = request.args.get("code")
+#     token = oauth.facebook.authorize_access_token()
+#     response = oauth.facebook.get("https://openidconnect.googleapis.com/v1/userinfo")
+#     user_info = response.json()
+#     print(user_info)
+#     # user_data = db.users.find_one(
+#     #     {"provider": "facebook", "provider_id": user_info.get("sub")}
+#     # )
+#     # if not user_data:
+#     #     stored_user = db.users.insert_one(
+#     #         {
+#     #             "provider": "google",
+#     #             "provider_id": user_info.get("sub"),
+#     #             "username": user_info.get("name"),
+#     #             "email": user_info.get("email"),
+#     #             "profile_pic": user_info.get("picture"),
+#     #         }
+#     #     )
+#     #     user_data = db.users.find_one({"username": user_info["name"]})
+
+#     # user = User(user_data)
+#     # login_user(user)
+#     return redirect(url_for("index"))
+
+@app.route("/logout")
+def logout():
+    logout_user()
+    return redirect(url_for("login"))
+
 
 if __name__ == "__main__":
-    app.run(debug=False)
+    app.run(debug=True, port=9000)
