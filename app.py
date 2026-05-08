@@ -36,6 +36,9 @@ app.config["LINKEDIN_CLIENT_ID"] = os.getenv("LINKEDIN_CLIENT_ID")
 app.config["LINKEDIN_CLIENT_SECRET"] = os.getenv("LINKEDIN_CLIENT_SECRET")
 app.config["GITHUB_CLIENT_ID"] = os.getenv("GITHUB_CLIENT_ID")
 app.config["GITHUB_CLIENT_SECRET"] = os.getenv("GITHUB_CLIENT_SECRET")
+app.config["FACEBOOK_CLIENT_ID"] = os.getenv("FACEBOOK_CLIENT_ID")
+app.config["FACEBOOK_CLIENT_SECRET"] = os.getenv("FACEBOOK_CLIENT_SECRET")
+
 
 # connecting to the databases- database and collection creation
 client = MongoClient(app.config["MONGO_URI"])
@@ -66,7 +69,7 @@ oauth.register(
 )
 oauth.register(
     name="github",
-    clint_id=app.config["GITHUB_CLIENT_ID"],
+    client_id=app.config["GITHUB_CLIENT_ID"],
     client_secret=app.config["GITHUB_CLIENT_SECRET"],
     server_metadata_url="https://github.com/login/oauth/.well-known/openid-configuration",
     client_kwargs={"scope": "openid email profile"},
