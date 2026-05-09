@@ -1,32 +1,20 @@
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, redirect, render_template, url_for
+from forms.forms import CommentForm, ContactForm
+from database.db import db
+from auth import auth_bp
+from extensions import oauth, bootstrap, csrf, loginManager
 import os
-from bson import ObjectId
-from pymongo import MongoClient
 from dotenv import load_dotenv
-from flask_bootstrap import Bootstrap5
-from flask_wtf import FlaskForm, CSRFProtect
-from wtforms import StringField, SubmitField, TextAreaField, PasswordField
-from wtforms.validators import DataRequired, Email, Length, URL
-from werkzeug.security import generate_password_hash, check_password_hash
-from flask_login import (
-    LoginManager,
-    UserMixin,
-    login_user,
-    logout_user,
-    login_required,
-    current_user,
-)
-from authlib.integrations.flask_client import OAuth
-import requests
-from flask import session
-import secrets
 
-# loading the configuration from .env file
 load_dotenv()
-
-
-# making the application instance
 app = Flask(__name__)
+app.register_blueprint(auth_bp)
+loginManager.init_app(app)
+csrf.init_app(app)
+loginManager.login_view = "auth.login"
+bootstrap.init_app(app)
+oauth.init_app(app)
+
 # storing the configuration in variables
 app.config["MONGO_URI"] = os.getenv("MONGO_URI")
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")
@@ -39,16 +27,6 @@ app.config["GITHUB_CLIENT_SECRET"] = os.getenv("GITHUB_CLIENT_SECRET")
 app.config["FACEBOOK_CLIENT_ID"] = os.getenv("FACEBOOK_CLIENT_ID")
 app.config["FACEBOOK_CLIENT_SECRET"] = os.getenv("FACEBOOK_CLIENT_SECRET")
 
-
-# connecting to the databases- database and collection creation
-client = MongoClient(app.config["MONGO_URI"])
-db = client["content"]
-bootstrap = Bootstrap5(app)
-csrf = CSRFProtect(app)
-login_manager = LoginManager(app)
-login_manager.init_app(app)
-login_manager.login_view = "login"
-oauth = OAuth(app)
 
 oauth.register(
     name="google",
@@ -86,99 +64,6 @@ oauth.register(
         "scope": "email public_profile",
     },
 )
-
-
-class CommentForm(FlaskForm):
-    username = StringField(
-        "Username",
-        validators=[DataRequired(), Length(min=3)],
-        render_kw={"placeholder": "Enter your name"},
-    )
-    email = StringField("Email", validators=[DataRequired(), Email()])
-    website = StringField(
-        "Website",
-        validators=[URL(require_tld=True, message="Please enter a valid URL.")],
-        default="",
-    )
-    comment = TextAreaField("Comment", validators=[DataRequired(), Length(min=10)])
-    image_url = StringField(
-        "Image URL",
-        validators=[URL(require_tld=True, message="Please enter a valid URL.")],
-        default="",
-    )
-    submit = SubmitField("Submit")
-
-
-class ContactForm(FlaskForm):
-
-    name = StringField(
-        "Name",
-        validators=[DataRequired(), Length(min=3)],
-        render_kw={"placeholder": "Your Name"},
-    )
-    email = StringField(
-        "Email",
-        validators=[DataRequired(), Email()],
-        render_kw={"placeholder": "Your Email"},
-    )
-    subject = StringField(
-        "Subject",
-        validators=[DataRequired()],
-        render_kw={"placeholder": "Your Subject"},
-    )
-    message = TextAreaField(
-        "Message",
-        validators=[DataRequired(), Length(min=5)],
-        render_kw={"placeholder": "Your Message"},
-    )
-    submit = SubmitField("Submit")
-
-
-class SignupForm(FlaskForm):
-    username = StringField(
-        "Username",
-        validators=[DataRequired(), Length(min=3)],
-        render_kw={"placeholder": "Enter your username"},
-    )
-    password = PasswordField(
-        "Password",
-        validators=[DataRequired(), Length(min=3)],
-        render_kw={"placeholder": "Enter your password"},
-    )
-    submit = SubmitField("Sign Up")
-
-
-class LoginForm(FlaskForm):
-    username = StringField(
-        "Username",
-        validators=[DataRequired(), Length(min=3)],
-        render_kw={"placeholder": "Enter your username"},
-    )
-    password = PasswordField(
-        "Password",
-        validators=[DataRequired(), Length(min=3)],
-        render_kw={"placeholder": "Enter your password"},
-    )
-    submit = SubmitField("Log In")
-
-
-class User(UserMixin):
-    def __init__(self, user_data):
-        self.id = str(user_data["_id"])
-        self.username = user_data["username"]
-        self.provider = user_data["provider"]
-        self.provider_id = user_data["provider_id"]
-        self.email = user_data["email"]
-        self.profile_pic = user_data["profile_pic"]
-
-
-@login_manager.user_loader
-def load_user(user_id):
-    if user_id:
-        user_data = db.users.find_one({"_id": ObjectId(user_id)})
-        return User(user_data) if user_data else None
-    else:
-        print("user_id not found")
 
 
 # routs started here
@@ -322,193 +207,6 @@ def starter_page():
 @app.route("/privacy-policy")
 def privacy_policy():
     return render_template("privacy_policy.html")
-
-
-@app.route("/signup", methods=["GET", "POST"])
-def signup():
-    form = SignupForm()
-    if form.validate_on_submit():
-        username = form.username.data.lower()
-        password = form.password.data
-        hashed_password = generate_password_hash(
-            password, method="scrypt", salt_length=16
-        )
-        existing_user = db.users.find_one({"username": username})
-        if existing_user:
-            return redirect(url_for("signup"))
-        signup_data = db.users.insert_one(
-            {"username": username, "password": hashed_password}
-        )
-        return redirect(url_for("login"))
-    return render_template("signup.html", form=form)
-
-
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    form = LoginForm()
-    if form.validate_on_submit():
-        username = form.username.data
-        password = form.password.data
-        user_data = db.users.find_one({"username": username})
-        if user_data and check_password_hash(user_data["password"], password):
-            user = User(user_data)
-            login_user(user)
-            return redirect(url_for("index"))
-    return render_template("login.html", form=form)
-
-
-@app.route("/login/google", methods=["GET", "POST"])
-def google_auth():
-    redirect_uri = url_for("google_callback", _external=True)
-    return oauth.google.authorize_redirect(redirect_uri)
-
-
-@app.route("/auth/google/callback")
-def google_callback():
-    code = request.args.get("code")
-    token = oauth.google.authorize_access_token()
-    response = oauth.google.get("https://openidconnect.googleapis.com/v1/userinfo")
-    user_info = response.json()
-    user_data = db.users.find_one(
-        {"provider": "google", "provider_id": user_info.get("sub")}
-    )
-    if not user_data:
-        stored_user = db.users.insert_one(
-            {
-                "provider": "google",
-                "provider_id": user_info.get("sub"),
-                "username": user_info.get("name"),
-                "email": user_info.get("email"),
-                "profile_pic": user_info.get("picture"),
-            }
-        )
-        user_data = db.users.find_one({"username": user_info["name"]})
-
-    user = User(user_data)
-    login_user(user)
-    return redirect(url_for("index"))
-
-
-@app.route("/login/linkedin", methods=["GET", "POST"])
-def linkedin_auth():
-    redirect_uri = url_for("linkedin_callback", _external=True)
-    return oauth.linkedin.authorize_redirect(redirect_uri)
-
-
-@app.route("/auth/linkedin/callback")
-def linkedin_callback():
-    code = request.args.get("code")
-    redirect_uri = url_for("linkedin_callback", _external=True)
-    token_response = requests.post(
-        "https://www.linkedin.com/oauth/v2/accessToken",
-        data={
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": redirect_uri,
-            "client_id": app.config["LINKEDIN_CLIENT_ID"],
-            "client_secret": app.config["LINKEDIN_CLIENT_SECRET"],
-        },
-    )
-    token_data = token_response.json()
-    access_token = token_data["access_token"]
-    user_response = requests.get(
-        "https://api.linkedin.com/v2/userinfo",
-        headers={"Authorization": f"Bearer {access_token}"},
-    )
-    user_info = user_response.json()
-    user_data = db.users.find_one(
-        {"provider": "linkedin", "provider_id": user_info.get("sub")}
-    )
-    if not user_data:
-        stored_user = db.users.insert_one(
-            {
-                "provider": "linkedin",
-                "provider_id": user_info.get("sub"),
-                "username": user_info.get("name"),
-                "email": user_info.get("email"),
-                "profile_pic": user_info.get("picture"),
-            }
-        )
-        user_data = db.users.find_one({"username": user_info["name"]})
-
-    user = User(user_data)
-    login_user(user)
-    print("profile_pic", current_user.profile_pic)
-    return redirect(url_for("index"))
-
-
-@app.route("/login/github")
-def github_auth():
-    redirect_uri = url_for("github_callback", _external=True)
-    return oauth.github.authorize_redirect(redirect_uri)
-
-
-@app.route("/auth/github/callback")
-def github_callback():
-    code = request.args.get("code")
-    token = oauth.github.authorize_access_token()
-    response = oauth.github.get("https://api.github.com/user")
-    user_info = response.json()
-    print("user_info", user_info)
-    existing_user = db.users.find_one(
-        {"provider": "github", "provider_id": user_info.get("id")}
-    )
-    if not existing_user:
-        db.users.insert_one(
-            {
-                "provider": "github",
-                "provider_id": user_info.get("id"),
-                "username": user_info.get("name"),
-                "email": user_info.get("email"),
-                "profile_pic": user_info.get("avatar_url"),
-            }
-        )
-    user_data = db.users.find_one(
-        {"provider": "github", "provider_id": user_info.get("id")}
-    )
-    user = User(user_data)
-    login_user(user)
-    return redirect(url_for("index"))
-
-
-@app.route("/login/facebook", methods=["GET", "POST"])
-def facebook_auth():
-    redirect_uri = url_for("facebook_callback", _external=True)
-    return oauth.facebook.authorize_redirect(redirect_uri)
-
-
-@app.route("/auth/facebook/callback")
-def facebook_callback():
-    token = oauth.facebook.authorize_access_token()
-
-    response = oauth.facebook.get("me?fields=id,name,email,picture")
-
-    user_info = response.json()
-
-    user_data = db.users.find_one(
-        {"provider": "facebook", "provider_id": user_info.get("id")}
-    )
-    if not user_data:
-        stored_user = db.users.insert_one(
-            {
-                "provider": "facebook",
-                "provider_id": user_info.get("id"),
-                "username": user_info.get("name"),
-                "email": user_info.get("email"),
-                "profile_pic": user_info["picture"]["data"]["url"],
-            }
-        )
-        user_data = db.users.find_one({"username": user_info["name"]})
-
-    user = User(user_data)
-    login_user(user)
-    return redirect(url_for("index"))
-
-
-@app.route("/logout")
-def logout():
-    logout_user()
-    return redirect(url_for("login"))
 
 
 if __name__ == "__main__":

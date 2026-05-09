@@ -4,15 +4,15 @@
     <div class="row justify-content-center">
       <div class="col-md-6">
         <h2 class="text-center mb-4">Login</h2>
-        <form method="POST" action="{{ url_for('login') }}">
+        <form method="POST" action="{{ url_for('auth.login') }}">
           {{ form.hidden_tag() }}
           <div class="form-group">
-            {{ form.username.label(class="form-label") }}
-            {{ form.username(class="form-control") }}
+            {{ form.username.label(class="form-label") }} {{
+            form.username(class="form-control") }}
           </div>
           <div class="form-group">
-            {{ form.password.label(class="form-label") }}
-            {{ form.password(class="form-control") }}
+            {{ form.password.label(class="form-label") }} {{
+            form.password(class="form-control") }}
           </div>
           <button type="submit" class="btn btn-primary">Login</button>
         </form>
@@ -20,10 +20,17 @@
     </div>
   </div>
 </main>
-<a href="{{ url_for('google_auth') }}"><button>Login via Google</button></a>
-<a href="{{ url_for('linkedin_auth') }}"><button>Login via LinkedIn</button></a>
-<a href="{{ url_for('github_auth') }}"><button>Login via Github</button></a>
-<a href="{{ url_for('facebook_auth') }}"><button>Login via Facebook</button></a>
-
+<a href="{{ url_for('auth.google_auth') }}"
+  ><button>Login via Google</button></a
+>
+<a href="{{ url_for('auth.linkedin_auth') }}"
+  ><button>Login via LinkedIn</button></a
+>
+<a href="{{ url_for('auth.github_auth') }}"
+  ><button>Login via Github</button></a
+>
+<a href="{{ url_for('auth.facebook_auth') }}"
+  ><button>Login via Facebook</button></a
+>
 
 {% endblock %}

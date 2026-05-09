@@ -68,11 +68,11 @@ bootstrap.load_css() }} {{ bootstrap.load_js() }}
             <li><a href="{{ url_for('about') }}">About</a></li>
             <li><a href="{{ url_for('contact') }}">Contact</a></li>
             {% if current_user.is_authenticated %}
-                  <li><a href="{{ url_for('single_post') }}">Single Post</a></li>
-                  <li><a href="{{ url_for('logout') }}">Logout</a></li>
+            <li><a href="{{ url_for('single_post') }}">Single Post</a></li>
+            <li><a href="{{ url_for('auth.logout') }}">Logout</a></li>
             {% else %}
-                  <li><a href="{{ url_for('signup') }}">Signup</a></li>
-                  <li><a href="{{ url_for('login') }}">Login</a></li>
+            <li><a href="{{ url_for('auth.signup') }}">Signup</a></li>
+            <li><a href="{{ url_for('auth.login') }}">Login</a></li>
             {% endif %}
           </ul>
           <i class="mobile-nav-toggle d-xl-none bi bi-list"></i>
