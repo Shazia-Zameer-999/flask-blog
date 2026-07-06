@@ -1,1 +1,48 @@
-{% extends 'base.html' %}{% block title %}Contact{% endblock %}{% block content %}<section class="page-hero"><div class="shell"><span class="eyebrow">Say hello</span><h1>Let’s start a conversation.</h1><p>Questions, ideas, feedback—we read every message.</p></div></section><section class="section"><div class="shell contact-grid"><div class="contact-copy"><h2>We’re listening.</h2><p>ShazBlog is built in public with its readers. Tell us what resonates, what could be clearer, or what you’d love to read next.</p><div class="contact-method"><i class="bi bi-envelope"></i><div><b>Email</b><a href="mailto:hello@shazblog.com">hello@shazblog.com</a></div></div><div class="contact-method"><i class="bi bi-clock"></i><div><b>Response time</b><span>Usually within two business days</span></div></div></div><form method="post" class="stack-form form-card" novalidate>{{ form.hidden_tag() }}{% for field in [form.name,form.email,form.subject,form.message] %}<div class="field">{{ field.label }}{% if field.type == 'TextAreaField' %}{{ field(class='input', rows=6) }}{% else %}{{ field(class='input') }}{% endif %}{% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}</div>{% endfor %}{{ form.submit(class='button') }}</form></div></section>{% endblock %}
+{% extends 'base.html' %}{% block title %}Contact{% endblock %}{% block content
+%}
+<section class="page-hero">
+  <div class="shell">
+    <span class="eyebrow">Say hello</span>
+    <h1>Let’s start a conversation.</h1>
+    <p>Questions, ideas, feedback—we read every message.</p>
+  </div>
+</section>
+<section class="section">
+  <div class="shell contact-grid">
+    <div class="contact-copy">
+      <h2>We’re listening.</h2>
+      <p>
+        ShazBlog is built in public with its readers. Tell us what resonates,
+        what could be clearer, or what you’d love to read next.
+      </p>
+      <div class="contact-method">
+        <i class="bi bi-envelope"></i>
+        <div>
+          <b>Email</b
+          ><a href="mailto:shaziazameer7867@gmail.com"
+            >shaziazameer7867@gmail.com</a
+          >
+        </div>
+      </div>
+      <div class="contact-method">
+        <i class="bi bi-clock"></i>
+        <div>
+          <b>Response time</b><span>Usually within two business days</span>
+        </div>
+      </div>
+    </div>
+    <form method="post" class="stack-form form-card" novalidate>
+      {{ form.hidden_tag() }}{% for field in
+      [form.name,form.email,form.subject,form.message] %}
+      <div class="field">
+        {{ field.label }}{% if field.type == 'TextAreaField' %}{{
+        field(class='input', rows=6) }}{% else %}{{ field(class='input') }}{%
+        endif %}{% for error in field.errors %}<small class="field-error"
+          >{{ error }}</small
+        >{% endfor %}
+      </div>
+      {% endfor %}{{ form.submit(class='button') }}
+    </form>
+  </div>
+</section>
+{% endblock %}

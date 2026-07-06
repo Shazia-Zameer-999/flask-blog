@@ -3,11 +3,21 @@ import re
 import unicodedata
 from io import BytesIO
 from datetime import datetime, timezone
-
+import resend
 from bson import ObjectId
 from bson.errors import InvalidId
 from dotenv import load_dotenv
-from flask import Flask, abort, flash, redirect, render_template, request, send_file, url_for
+from flask import (
+    Flask,
+    abort,
+    flash,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    url_for,
+    jsonify
+)
 from flask_login import current_user, login_required
 from gridfs import GridFS
 from gridfs.errors import NoFile
@@ -21,9 +31,13 @@ from forms.forms import CommentForm, ContactForm, PostForm, ProfileForm
 
 load_dotenv()
 
+resend.api_key = os.environ["RESEND_API_KEY"]
+print("Resend API Key:", resend.api_key)  # Debugging line to check if the API key is loaded correctly
 
 def slugify(value):
-    value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
+    value = (
+        unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
+    )
     return re.sub(r"[^a-z0-9]+", "-", value).strip("-")
 
 
@@ -70,7 +84,10 @@ def create_app(test_config=None):
 
 def _register_oauth(app):
     configs = {
-        "google": dict(server_metadata_url="https://accounts.google.com/.well-known/openid-configuration", client_kwargs={"scope": "openid email profile"}),
+        "google": dict(
+            server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+            client_kwargs={"scope": "openid email profile"},
+        ),
         "linkedin": dict(
             server_metadata_url="https://www.linkedin.com/oauth/.well-known/openid-configuration",
             client_kwargs={
@@ -78,11 +95,26 @@ def _register_oauth(app):
             },
             token_endpoint_auth_method="client_secret_post",
         ),
-        "github": dict(access_token_url="https://github.com/login/oauth/access_token", authorize_url="https://github.com/login/oauth/authorize", api_base_url="https://api.github.com/", client_kwargs={"scope": "read:user user:email"}),
-        "facebook": dict(access_token_url="https://graph.facebook.com/v22.0/oauth/access_token", authorize_url="https://www.facebook.com/v22.0/dialog/oauth", api_base_url="https://graph.facebook.com/v22.0/", client_kwargs={"scope": "email public_profile"}),
+        "github": dict(
+            access_token_url="https://github.com/login/oauth/access_token",
+            authorize_url="https://github.com/login/oauth/authorize",
+            api_base_url="https://api.github.com/",
+            client_kwargs={"scope": "read:user user:email"},
+        ),
+        "facebook": dict(
+            access_token_url="https://graph.facebook.com/v22.0/oauth/access_token",
+            authorize_url="https://www.facebook.com/v22.0/dialog/oauth",
+            api_base_url="https://graph.facebook.com/v22.0/",
+            client_kwargs={"scope": "email public_profile"},
+        ),
     }
     for name, extra in configs.items():
-        oauth.register(name=name, client_id=app.config.get(f"{name.upper()}_CLIENT_ID"), client_secret=app.config.get(f"{name.upper()}_CLIENT_SECRET"), **extra)
+        oauth.register(
+            name=name,
+            client_id=app.config.get(f"{name.upper()}_CLIENT_ID"),
+            client_secret=app.config.get(f"{name.upper()}_CLIENT_SECRET"),
+            **extra,
+        )
 
 
 def _oid(value):
@@ -104,7 +136,11 @@ def _post_or_404(slug, include_drafts=False):
 
 def _attach_author_profiles(posts):
     """Attach each author's current name and avatar without per-post queries."""
-    author_ids = {post.get("author_id") for post in posts if isinstance(post.get("author_id"), ObjectId)}
+    author_ids = {
+        post.get("author_id")
+        for post in posts
+        if isinstance(post.get("author_id"), ObjectId)
+    }
     if not author_ids:
         return posts
     profiles = {
@@ -117,7 +153,9 @@ def _attach_author_profiles(posts):
     for post in posts:
         profile = profiles.get(post.get("author_id"))
         if profile:
-            post["author_name"] = profile.get("username", post.get("author_name", "Reader"))
+            post["author_name"] = profile.get(
+                "username", post.get("author_name", "Reader")
+            )
             post["author_avatar"] = profile.get("profile_pic", "")
     return posts
 
@@ -127,7 +165,13 @@ def _save_image(file_storage, prefix):
     if not file_storage or not file_storage.filename:
         return None
     extension = os.path.splitext(file_storage.filename)[1].lower()
-    mime_types = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}
+    mime_types = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+    }
     image_id = GridFS(get_db(), collection="images").put(
         file_storage.stream,
         filename=f"{prefix}{extension}",
@@ -143,7 +187,9 @@ def _delete_image(image_url):
     if not image_url or marker not in image_url:
         return
     try:
-        GridFS(get_db(), collection="images").delete(ObjectId(image_url.rsplit(marker, 1)[1].split("?", 1)[0]))
+        GridFS(get_db(), collection="images").delete(
+            ObjectId(image_url.rsplit(marker, 1)[1].split("?", 1)[0])
+        )
     except (InvalidId, TypeError):
         return
 
@@ -155,15 +201,28 @@ def register_routes(app):
             image = GridFS(get_db(), collection="images").get(_oid(image_id))
         except NoFile:
             abort(404)
-        response = send_file(BytesIO(image.read()), mimetype=image.content_type, max_age=31536000)
-        response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'none'; sandbox"
+        response = send_file(
+            BytesIO(image.read()), mimetype=image.content_type, max_age=31536000
+        )
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; style-src 'none'; sandbox"
+        )
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
 
     @app.get("/")
     def index():
-        posts = _attach_author_profiles(list(get_db().posts.find({"published": True}).sort("created_at", DESCENDING).limit(7)))
-        return render_template("index.html", posts=posts, featured=posts[0] if posts else None)
+        posts = _attach_author_profiles(
+            list(
+                get_db()
+                .posts.find({"published": True})
+                .sort("created_at", DESCENDING)
+                .limit(7)
+            )
+        )
+        return render_template(
+            "index.html", posts=posts, featured=posts[0] if posts else None
+        )
 
     @app.get("/articles")
     @app.get("/category")
@@ -178,10 +237,26 @@ def register_routes(app):
             query["category"] = category_name
         per_page = 6
         total = get_db().posts.count_documents(query)
-        posts = _attach_author_profiles(list(get_db().posts.find(query).sort("created_at", DESCENDING).skip((page - 1) * per_page).limit(per_page)))
+        posts = _attach_author_profiles(
+            list(
+                get_db()
+                .posts.find(query)
+                .sort("created_at", DESCENDING)
+                .skip((page - 1) * per_page)
+                .limit(per_page)
+            )
+        )
         categories = get_db().posts.distinct("category", {"published": True})
-        return render_template("category.html", posts=posts, categories=sorted(filter(None, categories)), page=page,
-            pages=max(1, (total + per_page - 1) // per_page), total=total, query_text=query_text, selected_category=category_name)
+        return render_template(
+            "category.html",
+            posts=posts,
+            categories=sorted(filter(None, categories)),
+            page=page,
+            pages=max(1, (total + per_page - 1) // per_page),
+            total=total,
+            query_text=query_text,
+            selected_category=category_name,
+        )
 
     @app.route("/articles/<slug>", methods=["GET", "POST"])
     def article(slug):
@@ -192,30 +267,55 @@ def register_routes(app):
             if not current_user.is_authenticated:
                 flash("Sign in to join the conversation.", "warning")
                 return redirect(url_for("auth.login", next=request.path))
-            get_db().comments.insert_one({"post_id": post["_id"], "user_id": ObjectId(current_user.id),
-                "username": current_user.username, "avatar_url": current_user.profile_pic,
-                "body": form.comment.data.strip(), "created_at": datetime.now(timezone.utc)})
+            get_db().comments.insert_one(
+                {
+                    "post_id": post["_id"],
+                    "user_id": ObjectId(current_user.id),
+                    "username": current_user.username,
+                    "avatar_url": current_user.profile_pic,
+                    "body": form.comment.data.strip(),
+                    "created_at": datetime.now(timezone.utc),
+                }
+            )
             flash("Your comment is live.", "success")
             return redirect(url_for("article", slug=slug, _anchor="comments"))
-        comments = list(get_db().comments.find({"post_id": post["_id"]}).sort("created_at", DESCENDING))
-        commenter_ids = {comment.get("user_id") for comment in comments if isinstance(comment.get("user_id"), ObjectId)}
-        commenter_profiles = {
-            user["_id"]: user
-            for user in get_db().users.find(
-                {"_id": {"$in": list(commenter_ids)}},
-                {"username": 1, "profile_pic": 1},
-            )
-        } if commenter_ids else {}
+        comments = list(
+            get_db()
+            .comments.find({"post_id": post["_id"]})
+            .sort("created_at", DESCENDING)
+        )
+        commenter_ids = {
+            comment.get("user_id")
+            for comment in comments
+            if isinstance(comment.get("user_id"), ObjectId)
+        }
+        commenter_profiles = (
+            {
+                user["_id"]: user
+                for user in get_db().users.find(
+                    {"_id": {"$in": list(commenter_ids)}},
+                    {"username": 1, "profile_pic": 1},
+                )
+            }
+            if commenter_ids
+            else {}
+        )
         for comment in comments:
             profile = commenter_profiles.get(comment.get("user_id"))
             if profile:
-                comment["username"] = profile.get("username", comment.get("username", "Reader"))
+                comment["username"] = profile.get(
+                    "username", comment.get("username", "Reader")
+                )
                 comment["avatar_url"] = profile.get("profile_pic", "")
-        return render_template("single-post.html", post=post, comments=comments, form=form)
+        return render_template(
+            "single-post.html", post=post, comments=comments, form=form
+        )
 
     @app.route("/single-post", methods=["GET", "POST"])
     def single_post():
-        post = get_db().posts.find_one({"published": True}, sort=[("created_at", DESCENDING)])
+        post = get_db().posts.find_one(
+            {"published": True}, sort=[("created_at", DESCENDING)]
+        )
         if not post:
             return redirect(url_for("category"))
         return redirect(url_for("article", slug=post["slug"]))
@@ -230,10 +330,20 @@ def register_routes(app):
             while get_db().posts.find_one({"slug": slug}):
                 suffix += 1
                 slug = f"{base}-{suffix}"
-            image_url = _save_image(form.image_file.data, "cover") or (form.image_url.data or "").strip()
+            image_url = (
+                _save_image(form.image_file.data, "cover")
+                or (form.image_url.data or "").strip()
+            )
             get_db().posts.insert_one(_post_data(form, slug, image_url))
-            flash("Article published." if form.published.data else "Draft saved.", "success")
-            return redirect(url_for("article", slug=slug) if form.published.data else url_for("profile"))
+            flash(
+                "Article published." if form.published.data else "Draft saved.",
+                "success",
+            )
+            return redirect(
+                url_for("article", slug=slug)
+                if form.published.data
+                else url_for("profile")
+            )
         return render_template("post_form.html", form=form, title="Write an article")
 
     @app.route("/articles/<slug>/edit", methods=["GET", "POST"])
@@ -245,18 +355,30 @@ def register_routes(app):
         form_values = dict(post)
         if "/media/" in form_values.get("image_url", ""):
             form_values["image_url"] = ""
-        form = PostForm(obj=type("Post", (), form_values) if request.method == "GET" else None)
+        form = PostForm(
+            obj=type("Post", (), form_values) if request.method == "GET" else None
+        )
         if form.validate_on_submit():
             uploaded_url = _save_image(form.image_file.data, "cover")
-            image_url = uploaded_url or (form.image_url.data or "").strip() or post.get("image_url", "")
+            image_url = (
+                uploaded_url
+                or (form.image_url.data or "").strip()
+                or post.get("image_url", "")
+            )
             data = _post_data(form, post["slug"], image_url)
             data.pop("created_at", None)
             get_db().posts.update_one({"_id": post["_id"]}, {"$set": data})
             if uploaded_url and post.get("image_url") != uploaded_url:
                 _delete_image(post.get("image_url"))
             flash("Article updated.", "success")
-            return redirect(url_for("article", slug=post["slug"]) if form.published.data else url_for("profile"))
-        return render_template("post_form.html", form=form, title="Edit article", post=post)
+            return redirect(
+                url_for("article", slug=post["slug"])
+                if form.published.data
+                else url_for("profile")
+            )
+        return render_template(
+            "post_form.html", form=form, title="Edit article", post=post
+        )
 
     @app.post("/articles/<slug>/delete")
     @login_required
@@ -278,57 +400,173 @@ def register_routes(app):
         form_values = dict(user)
         if "/media/" in form_values.get("profile_pic", ""):
             form_values["profile_pic"] = ""
-        form = ProfileForm(obj=type("Profile", (), form_values) if request.method == "GET" else None)
+        form = ProfileForm(
+            obj=type("Profile", (), form_values) if request.method == "GET" else None
+        )
         if form.validate_on_submit():
-            conflict = database.users.find_one({"_id": {"$ne": user["_id"]}, "$or": [{"username": form.username.data.lower()}, {"email": form.email.data.lower()}]})
+            conflict = database.users.find_one(
+                {
+                    "_id": {"$ne": user["_id"]},
+                    "$or": [
+                        {"username": form.username.data.lower()},
+                        {"email": form.email.data.lower()},
+                    ],
+                }
+            )
             if conflict:
                 flash("That username or email is already in use.", "danger")
             else:
                 uploaded_url = _save_image(form.profile_pic_file.data, "avatar")
-                profile_pic = uploaded_url or (form.profile_pic.data or "").strip() or user.get("profile_pic", "")
-                database.users.update_one({"_id": user["_id"]}, {"$set": {"username": form.username.data.strip().lower(),
-                    "email": form.email.data.strip().lower(), "bio": (form.bio.data or "").strip(), "profile_pic": profile_pic}})
+                profile_pic = (
+                    uploaded_url
+                    or (form.profile_pic.data or "").strip()
+                    or user.get("profile_pic", "")
+                )
+                database.users.update_one(
+                    {"_id": user["_id"]},
+                    {
+                        "$set": {
+                            "username": form.username.data.strip().lower(),
+                            "email": form.email.data.strip().lower(),
+                            "bio": (form.bio.data or "").strip(),
+                            "profile_pic": profile_pic,
+                        }
+                    },
+                )
                 if uploaded_url and user.get("profile_pic") != uploaded_url:
                     _delete_image(user.get("profile_pic"))
                 flash("Profile updated.", "success")
                 return redirect(url_for("profile"))
-        posts = list(database.posts.find({"author_id": user["_id"]}).sort("created_at", DESCENDING))
+        posts = list(
+            database.posts.find({"author_id": user["_id"]}).sort(
+                "created_at", DESCENDING
+            )
+        )
         return render_template("profile.html", form=form, posts=posts)
 
     @app.route("/contact", methods=["GET", "POST"])
     def contact():
         form = ContactForm()
+        
+        # Check if this is an AJAX/Fetch request expecting JSON
+        is_ajax = request.headers.get("Accept") == "application/json"
+
         if form.validate_on_submit():
-            get_db().messages.insert_one({"name": form.name.data.strip(), "email": form.email.data.lower().strip(),
-                "subject": form.subject.data.strip(), "message": form.message.data.strip(), "created_at": datetime.now(timezone.utc), "status": "new"})
-            flash("Thanks — your message has reached us.", "success")
-            return redirect(url_for("contact"))
+            try:
+                message_data = {
+                    "name": form.name.data.strip(),
+                    "email": form.email.data.lower().strip(),
+                    "subject": form.subject.data.strip(),
+                    "message": form.message.data.strip(),
+                    "created_at": datetime.now(timezone.utc),
+                    "status": "new",
+                }
+                
+                get_db().messages.insert_one(message_data)
+                print(f"Message saved for: {message_data['email']}") 
+
+                params: resend.Emails.SendParams = {
+                    "from": "Shazia Zameer <onboarding@resend.dev>",
+                    "to": ["shaziazameer7867@gmail.com"],
+                    "subject": message_data["subject"],
+                    "html": f"<strong>{message_data['message']}</strong>",
+                }
+                
+                resend.Emails.send(params)
+
+                if is_ajax:
+                    return jsonify({"status": "success", "message": "Thanks — your message has reached us."}), 200
+
+                flash("Thanks — your message has reached us.", "success")
+                return redirect(url_for("contact"))
+                
+            except Exception as e:
+                print(f"Error processing contact form: {e}")
+                if is_ajax:
+                    return jsonify({"status": "error", "message": "Sorry, something went wrong. Please try again."}), 500
+                
+                flash("Sorry, something went wrong while sending your message. Please try again.", "error")
+
+        # If form validation fails on a POST request
+        if request.method == "POST" and is_ajax:
+            return jsonify({"status": "invalid", "errors": form.errors}), 400
+
         return render_template("contact.html", form=form)
 
     @app.get("/about")
-    def about(): return render_template("about.html")
+    def about():
+        return render_template("about.html")
+
     @app.get("/privacy-policy")
-    def privacy_policy(): return render_template("privacy_policy.html")
+    def privacy_policy():
+        return render_template("privacy_policy.html")
 
     def _post_data(form, slug, image_url):
-        return {"title": form.title.data.strip(), "slug": slug, "category": form.category.data.strip().title(),
-            "excerpt": form.excerpt.data.strip(), "body": form.body.data.strip(), "image_url": image_url,
-            "published": form.published.data, "author_id": ObjectId(current_user.id), "author_name": current_user.username,
+        return {
+            "title": form.title.data.strip(),
+            "slug": slug,
+            "category": form.category.data.strip().title(),
+            "excerpt": form.excerpt.data.strip(),
+            "body": form.body.data.strip(),
+            "image_url": image_url,
+            "published": form.published.data,
+            "author_id": ObjectId(current_user.id),
+            "author_name": current_user.username,
             "author_avatar": current_user.profile_pic,
-            "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc)}
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
 
 
 def register_errors(app):
     @app.errorhandler(403)
-    def forbidden(error): return render_template("error.html", code=403, title="Not allowed", message="You don't have permission to do that."), 403
+    def forbidden(error):
+        return (
+            render_template(
+                "error.html",
+                code=403,
+                title="Not allowed",
+                message="You don't have permission to do that.",
+            ),
+            403,
+        )
+
     @app.errorhandler(404)
-    def not_found(error): return render_template("error.html", code=404, title="Page not found", message="That page wandered off the map."), 404
+    def not_found(error):
+        return (
+            render_template(
+                "error.html",
+                code=404,
+                title="Page not found",
+                message="That page wandered off the map.",
+            ),
+            404,
+        )
+
     @app.errorhandler(413)
-    def too_large(error): return render_template("error.html", code=413, title="Request too large", message="Please submit a smaller request."), 413
+    def too_large(error):
+        return (
+            render_template(
+                "error.html",
+                code=413,
+                title="Request too large",
+                message="Please submit a smaller request.",
+            ),
+            413,
+        )
+
     @app.errorhandler(PyMongoError)
     def database_error(error):
         app.logger.exception("Database request failed")
-        return render_template("error.html", code=503, title="We'll be right back", message="The content service is temporarily unavailable."), 503
+        return (
+            render_template(
+                "error.html",
+                code=503,
+                title="We'll be right back",
+                message="The content service is temporarily unavailable.",
+            ),
+            503,
+        )
 
 
 app = create_app()
