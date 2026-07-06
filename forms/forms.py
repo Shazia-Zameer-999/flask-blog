@@ -1,77 +1,75 @@
 from flask_wtf import FlaskForm
-from wtforms import StringField, SubmitField, TextAreaField, PasswordField
-from wtforms.validators import DataRequired, Email, Length, URL
+from flask_wtf.file import FileAllowed, FileField
+from wtforms import BooleanField, PasswordField, StringField, SubmitField, TextAreaField
+from wtforms.validators import DataRequired, Email, EqualTo, Length, Optional, URL, ValidationError
 
 
-class CommentForm(FlaskForm):
-    username = StringField(
-        "Username",
-        validators=[DataRequired(), Length(min=3)],
-        render_kw={"placeholder": "Enter your name"},
+def validate_image_file(form, field):
+    """Reject renamed non-image files by checking common image signatures."""
+    upload = field.data
+    if not upload or not upload.filename:
+        return
+    header = upload.stream.read(16)
+    upload.stream.seek(0)
+    is_image = (
+        header.startswith(b"\xff\xd8\xff")
+        or header.startswith(b"\x89PNG\r\n\x1a\n")
+        or header.startswith((b"GIF87a", b"GIF89a"))
+        or (header.startswith(b"RIFF") and header[8:12] == b"WEBP")
     )
-    email = StringField("Email", validators=[DataRequired(), Email()])
-    website = StringField(
-        "Website",
-        validators=[URL(require_tld=True, message="Please enter a valid URL.")],
-        default="",
-    )
-    comment = TextAreaField("Comment", validators=[DataRequired(), Length(min=10)])
-    image_url = StringField(
-        "Image URL",
-        validators=[URL(require_tld=True, message="Please enter a valid URL.")],
-        default="",
-    )
-    submit = SubmitField("Submit")
-
-
-class ContactForm(FlaskForm):
-
-    name = StringField(
-        "Name",
-        validators=[DataRequired(), Length(min=3)],
-        render_kw={"placeholder": "Your Name"},
-    )
-    email = StringField(
-        "Email",
-        validators=[DataRequired(), Email()],
-        render_kw={"placeholder": "Your Email"},
-    )
-    subject = StringField(
-        "Subject",
-        validators=[DataRequired()],
-        render_kw={"placeholder": "Your Subject"},
-    )
-    message = TextAreaField(
-        "Message",
-        validators=[DataRequired(), Length(min=5)],
-        render_kw={"placeholder": "Your Message"},
-    )
-    submit = SubmitField("Submit")
-
-
-class SignupForm(FlaskForm):
-    username = StringField(
-        "Username",
-        validators=[DataRequired(), Length(min=3)],
-        render_kw={"placeholder": "Enter your username"},
-    )
-    password = PasswordField(
-        "Password",
-        validators=[DataRequired(), Length(min=3)],
-        render_kw={"placeholder": "Enter your password"},
-    )
-    submit = SubmitField("Sign Up")
+    if not is_image:
+        raise ValidationError("The selected file is not a valid image.")
 
 
 class LoginForm(FlaskForm):
-    username = StringField(
-        "Username",
-        validators=[DataRequired(), Length(min=3)],
-        render_kw={"placeholder": "Enter your username"},
+    identity = StringField("Username or email", validators=[DataRequired(), Length(min=3, max=120)])
+    password = PasswordField("Password", validators=[DataRequired()])
+    remember = BooleanField("Keep me signed in")
+    submit = SubmitField("Sign in")
+
+
+class SignupForm(FlaskForm):
+    username = StringField("Username", validators=[DataRequired(), Length(min=3, max=30)])
+    email = StringField("Email", validators=[DataRequired(), Email(), Length(max=120)])
+    password = PasswordField("Password", validators=[DataRequired(), Length(min=8, max=128)])
+    confirm_password = PasswordField("Confirm password", validators=[DataRequired(), EqualTo("password")])
+    submit = SubmitField("Create account")
+
+
+class ProfileForm(FlaskForm):
+    username = StringField("Username", validators=[DataRequired(), Length(min=3, max=30)])
+    email = StringField("Email", validators=[DataRequired(), Email(), Length(max=120)])
+    bio = TextAreaField("Bio", validators=[Optional(), Length(max=280)])
+    profile_pic = StringField("Avatar URL", validators=[Optional(), URL(require_tld=True), Length(max=500)])
+    profile_pic_file = FileField(
+        "Or upload an avatar",
+        validators=[Optional(), FileAllowed(["jpg", "jpeg", "png", "gif", "webp"], "Upload a JPG, PNG, GIF, or WebP image."), validate_image_file],
     )
-    password = PasswordField(
-        "Password",
-        validators=[DataRequired(), Length(min=3)],
-        render_kw={"placeholder": "Enter your password"},
+    submit = SubmitField("Save profile")
+
+
+class PostForm(FlaskForm):
+    title = StringField("Title", validators=[DataRequired(), Length(min=5, max=140)])
+    category = StringField("Category", validators=[DataRequired(), Length(min=2, max=40)])
+    excerpt = TextAreaField("Summary", validators=[DataRequired(), Length(min=20, max=300)])
+    body = TextAreaField("Article", validators=[DataRequired(), Length(min=100, max=30000)])
+    image_url = StringField("Cover image URL", validators=[Optional(), URL(require_tld=True), Length(max=500)])
+    image_file = FileField(
+        "Or upload a cover image",
+        validators=[Optional(), FileAllowed(["jpg", "jpeg", "png", "gif", "webp"], "Upload a JPG, PNG, GIF, or WebP image."), validate_image_file],
     )
-    submit = SubmitField("Log In")
+    published = BooleanField("Publish now", default=True)
+    submit = SubmitField("Save article")
+
+
+class CommentForm(FlaskForm):
+    comment = TextAreaField("Join the conversation", validators=[DataRequired(), Length(min=3, max=1000)])
+    submit = SubmitField("Post comment")
+
+
+class ContactForm(FlaskForm):
+    name = StringField("Name", validators=[DataRequired(), Length(min=2, max=80)])
+    email = StringField("Email", validators=[DataRequired(), Email(), Length(max=120)])
+    subject = StringField("Subject", validators=[DataRequired(), Length(min=3, max=140)])
+    message = TextAreaField("Message", validators=[DataRequired(), Length(min=10, max=3000)])
+    submit = SubmitField("Send message")

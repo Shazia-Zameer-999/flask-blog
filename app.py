@@ -1,213 +1,282 @@
-from flask import Flask, redirect, render_template, url_for
-from forms.forms import CommentForm, ContactForm
-from database.db import db
-from auth import auth_bp
-from extensions import oauth, bootstrap, csrf, loginManager
 import os
+import re
+import unicodedata
+import uuid
+from datetime import datetime, timezone
+
+from bson import ObjectId
+from bson.errors import InvalidId
 from dotenv import load_dotenv
+from flask import Flask, abort, current_app, flash, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
+from pymongo import DESCENDING
+from pymongo.errors import PyMongoError
+from werkzeug.utils import secure_filename
+
+from auth import auth_bp
+from database.db import get_db, init_indexes
+from extensions import bootstrap, csrf, loginManager, oauth
+from forms.forms import CommentForm, ContactForm, PostForm, ProfileForm
 
 load_dotenv()
-app = Flask(__name__)
-app.register_blueprint(auth_bp)
-loginManager.init_app(app)
-csrf.init_app(app)
-loginManager.login_view = "auth.login"
-bootstrap.init_app(app)
-oauth.init_app(app)
-
-# storing the configuration in variables
-app.config["MONGO_URI"] = os.getenv("MONGO_URI")
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")
-app.config["GOOGLE_CLIENT_ID"] = os.getenv("GOOGLE_CLIENT_ID")
-app.config["GOOGLE_CLIENT_SECRET"] = os.getenv("GOOGLE_CLIENT_SECRET")
-app.config["LINKEDIN_CLIENT_ID"] = os.getenv("LINKEDIN_CLIENT_ID")
-app.config["LINKEDIN_CLIENT_SECRET"] = os.getenv("LINKEDIN_CLIENT_SECRET")
-app.config["GITHUB_CLIENT_ID"] = os.getenv("GITHUB_CLIENT_ID")
-app.config["GITHUB_CLIENT_SECRET"] = os.getenv("GITHUB_CLIENT_SECRET")
-app.config["FACEBOOK_CLIENT_ID"] = os.getenv("FACEBOOK_CLIENT_ID")
-app.config["FACEBOOK_CLIENT_SECRET"] = os.getenv("FACEBOOK_CLIENT_SECRET")
 
 
-oauth.register(
-    name="google",
-    client_id=app.config["GOOGLE_CLIENT_ID"],
-    client_secret=app.config["GOOGLE_CLIENT_SECRET"],
-    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
-    client_kwargs={"scope": "openid email profile"},
-)
-oauth.register(
-    name="linkedin",
-    client_id=app.config["LINKEDIN_CLIENT_ID"],
-    client_secret=app.config["LINKEDIN_CLIENT_SECRET"],
-    server_metadata_url="https://www.linkedin.com/oauth/.well-known/openid-configuration",
-    client_kwargs={
-        "scope": "openid profile email",
-        "token_endpoint_auth_method": "client_secret_post",
-    },
-)
-oauth.register(
-    name="github",
-    client_id=app.config["GITHUB_CLIENT_ID"],
-    client_secret=app.config["GITHUB_CLIENT_SECRET"],
-    server_metadata_url="https://github.com/login/oauth/.well-known/openid-configuration",
-    client_kwargs={"scope": "openid email profile"},
-)
-
-oauth.register(
-    name="facebook",
-    client_id=app.config["FACEBOOK_CLIENT_ID"],
-    client_secret=app.config["FACEBOOK_CLIENT_SECRET"],
-    access_token_url="https://graph.facebook.com/v22.0/oauth/access_token",
-    authorize_url="https://www.facebook.com/v22.0/dialog/oauth",
-    api_base_url="https://graph.facebook.com/v22.0/",
-    client_kwargs={
-        "scope": "email public_profile",
-    },
-)
+def slugify(value):
+    value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9]+", "-", value).strip("-")
 
 
-# routs started here
-@app.route("/")
-def index():
-    collection1 = db["swiperData"]
-    if collection1.count_documents({}) == 0:
-
-        collection1.insert_many(
-            [
-                {
-                    "title": "The Best Homemade Masks for Face (keep the Pimples Away)",
-                    "description": "Lorem ipsum dolor sit amet, consectetur adipisicing elit. Quidem neque est mollitia! Beatae minima assumenda repellat harum vero, officiis ipsam magnam obcaecati cumque maxime inventore repudiandae quidem necessitatibus rem atque.",
-                    "image_url": url_for("static", filename="img/post-slide-1.jpg"),
-                },
-                {
-                    "title": "10 Best Nutrition Tips for a Healthy Lifestyle",
-                    "description": "Lorem ipsum dolor sit amet, consectetur adipisicing elit. Quidem neque est mollitia! Beatae minima assumenda repellat harum vero, officiis ipsam magnam obcaecati cumque maxime inventore repudiandae quidem necessitatibus rem atque.",
-                    "image_url": url_for("static", filename="img/post-slide-2.jpg"),
-                },
-                {
-                    "title": "The Ultimate Guide to Homemade Masks for Face",
-                    "description": "Lorem ipsum dolor sit amet, consectetur adipisicing elit. Quidem neque est mollitia! Beatae minima assumenda repellat harum vero, officiis ipsam magnam obcaecati cumque maxime inventore repudiandae quidem necessitatibus rem atque.",
-                    "image_url": url_for("static", filename="img/post-slide-3.jpg"),
-                },
-                {
-                    "title": "5 Easy Ways to Stay Fit and Healthy",
-                    "description": "Lorem ipsum dolor sit amet, consectetur adipisicing elit. Quidem neque est mollitia! Beatae minima assumenda repellat harum vero, officiis ipsam magnam obcaecati cumque maxime inventore repudiandae quidem necessitatibus rem atque.",
-                    "image_url": url_for("static", filename="img/post-slide-4.jpg"),
-                },
-            ]
-        )
-
-    data = collection1.find()
-
-    return render_template("index.html", slides=data)
-
-
-@app.route("/about")
-def about():
-    collection2 = db["teamMembers"]
-    if collection2.count_documents({}) == 0:
-        collection2.insert_many(
-            [
-                {
-                    "name": "John Doe",
-                    "position": "Founder & CEO",
-                    "description": "Explicabo voluptatem mollitia et repellat qui dolorum quasi",
-                    "image_url": url_for("static", filename="img/team/team-1.jpg"),
-                },
-                {
-                    "name": "Jane Smith",
-                    "position": "Chief Editor",
-                    "description": "Explicabo voluptatem mollitia et repellat qui dolorum quasi",
-                    "image_url": url_for("static", filename="img/team/team-2.jpg"),
-                },
-                {
-                    "name": "Mike Johnson",
-                    "position": "Content Manager",
-                    "description": "Explicabo voluptatem mollitia et repellat qui dolorum quasi",
-                    "image_url": url_for("static", filename="img/team/team-3.jpg"),
-                },
-                {
-                    "name": "Emily Davis",
-                    "position": "Marketing Specialist",
-                    "description": "Explicabo voluptatem mollitia et repellat qui dolorum quasi",
-                    "image_url": url_for("static", filename="img/team/team-4.jpg"),
-                },
-                {
-                    "name": "David Wilson",
-                    "position": "Graphic Designer",
-                    "description": "Explicabo voluptatem mollitia et repellat qui dolorum quasi",
-                    "image_url": url_for("static", filename="img/team/team-5.jpg"),
-                },
-                {
-                    "name": "Sarah Brown",
-                    "position": "Social Media Manager",
-                    "description": "Explicabo voluptatem mollitia et repellat qui dolorum quasi",
-                    "image_url": url_for("static", filename="img/team/team-6.jpg"),
-                },
-            ]
-        )
-    data = collection2.find()
-
-    return render_template("about.html", team_members=data)
-
-
-@app.route("/contact", methods=["GET", "POST"])
-def contact():
-    form = ContactForm()
-    if form.validate_on_submit():
-        collection = db["contact"]
-        if collection.find_one({"email": form.email.data}) is None:
-            collection.insert_one(
-                {
-                    "name": form.name.data,
-                    "email": form.email.data,
-                    "subject": form.subject.data,
-                    "message": form.message.data,
-                }
-            )
-            return redirect(url_for("contact"))
-
-    return render_template("contact.html", form=form)
-
-
-@app.route("/category")
-def category():
-    return render_template("category.html")
-
-
-@app.route("/single-post", methods=["GET", "POST"])
-def single_post():
-    comments = list(db.comments.find())
-    form = CommentForm()
-    if form.validate_on_submit():
-        db.comments.insert_one(
-            {
-                "username": form.username.data,
-                "email": form.email.data,
-                "website": form.website.data,
-                "comment": form.comment.data,
-                "image_url": form.image_url.data
-                or url_for("static", filename="img/default.jpg"),
-            }
-        )
-        return redirect(url_for("single_post"))
-
-    count = db.comments.count_documents({})
-
-    return render_template(
-        "single-post.html", comments=comments, form=form, count=count
+def create_app(test_config=None):
+    app = Flask(__name__)
+    app.config.from_mapping(
+        SECRET_KEY=os.getenv("SECRET_KEY", "dev-only-change-me"),
+        MONGO_URI=os.getenv("MONGO_URI"),
+        MONGO_DB_NAME=os.getenv("MONGO_DB_NAME", "content"),
+        MAX_CONTENT_LENGTH=2 * 1024 * 1024,
+        UPLOAD_FOLDER=os.path.join(app.static_folder, "uploads"),
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=os.getenv("FLASK_ENV") == "production",
+        REMEMBER_COOKIE_HTTPONLY=True,
+        REMEMBER_COOKIE_SAMESITE="Lax",
     )
+    for provider in ("GOOGLE", "LINKEDIN", "GITHUB", "FACEBOOK"):
+        app.config[f"{provider}_CLIENT_ID"] = os.getenv(f"{provider}_CLIENT_ID")
+        app.config[f"{provider}_CLIENT_SECRET"] = os.getenv(f"{provider}_CLIENT_SECRET")
+    if test_config:
+        app.config.update(test_config)
+    os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+
+    loginManager.init_app(app)
+    loginManager.login_view = "auth.login"
+    loginManager.login_message_category = "warning"
+    csrf.init_app(app)
+    bootstrap.init_app(app)
+    oauth.init_app(app)
+    app.register_blueprint(auth_bp)
+    _register_oauth(app)
+    register_routes(app)
+    register_errors(app)
+
+    @app.context_processor
+    def globals_():
+        return {"current_year": datetime.now().year}
+
+    @app.cli.command("init-db")
+    def init_db_command():
+        init_indexes()
+        print("Database indexes created.")
+
+    return app
 
 
-@app.route("/starter-page")
-def starter_page():
-    return render_template("starter-page.html")
+def _register_oauth(app):
+    configs = {
+        "google": dict(server_metadata_url="https://accounts.google.com/.well-known/openid-configuration", client_kwargs={"scope": "openid email profile"}),
+        "linkedin": dict(server_metadata_url="https://www.linkedin.com/oauth/.well-known/openid-configuration", client_kwargs={"scope": "openid profile email"}),
+        "github": dict(access_token_url="https://github.com/login/oauth/access_token", authorize_url="https://github.com/login/oauth/authorize", api_base_url="https://api.github.com/", client_kwargs={"scope": "read:user user:email"}),
+        "facebook": dict(access_token_url="https://graph.facebook.com/v22.0/oauth/access_token", authorize_url="https://www.facebook.com/v22.0/dialog/oauth", api_base_url="https://graph.facebook.com/v22.0/", client_kwargs={"scope": "email public_profile"}),
+    }
+    for name, extra in configs.items():
+        oauth.register(name=name, client_id=app.config.get(f"{name.upper()}_CLIENT_ID"), client_secret=app.config.get(f"{name.upper()}_CLIENT_SECRET"), **extra)
 
 
-@app.route("/privacy-policy")
-def privacy_policy():
-    return render_template("privacy_policy.html")
+def _oid(value):
+    try:
+        return ObjectId(value)
+    except (InvalidId, TypeError):
+        abort(404)
 
+
+def _post_or_404(slug, include_drafts=False):
+    query = {"slug": slug}
+    if not include_drafts:
+        query["published"] = True
+    post = get_db().posts.find_one(query)
+    if not post:
+        abort(404)
+    return post
+
+
+def _save_image(file_storage, prefix):
+    """Save a validated image with a non-guessable name and return its public URL."""
+    if not file_storage or not file_storage.filename:
+        return None
+    original = secure_filename(file_storage.filename)
+    extension = os.path.splitext(original)[1].lower()
+    filename = f"{prefix}-{uuid.uuid4().hex}{extension}"
+    file_storage.save(os.path.join(current_app.config["UPLOAD_FOLDER"], filename))
+    return url_for("static", filename=f"uploads/{filename}")
+
+
+def _delete_local_image(image_url):
+    """Remove only files managed by this app; external URLs are never touched."""
+    marker = "/static/uploads/"
+    if not image_url or marker not in image_url:
+        return
+    filename = secure_filename(image_url.rsplit(marker, 1)[1].split("?", 1)[0])
+    path = os.path.join(current_app.config["UPLOAD_FOLDER"], filename)
+    if os.path.isfile(path):
+        os.remove(path)
+
+
+def register_routes(app):
+    @app.get("/")
+    def index():
+        posts = list(get_db().posts.find({"published": True}).sort("created_at", DESCENDING).limit(7))
+        return render_template("index.html", posts=posts, featured=posts[0] if posts else None)
+
+    @app.get("/articles")
+    @app.get("/category")
+    def category():
+        page = max(request.args.get("page", 1, type=int), 1)
+        query_text = request.args.get("q", "").strip()[:100]
+        category_name = request.args.get("category", "").strip()[:40]
+        query = {"published": True}
+        if query_text:
+            query["$text"] = {"$search": query_text}
+        if category_name:
+            query["category"] = category_name
+        per_page = 6
+        total = get_db().posts.count_documents(query)
+        posts = list(get_db().posts.find(query).sort("created_at", DESCENDING).skip((page - 1) * per_page).limit(per_page))
+        categories = get_db().posts.distinct("category", {"published": True})
+        return render_template("category.html", posts=posts, categories=sorted(filter(None, categories)), page=page,
+            pages=max(1, (total + per_page - 1) // per_page), total=total, query_text=query_text, selected_category=category_name)
+
+    @app.route("/articles/<slug>", methods=["GET", "POST"])
+    def article(slug):
+        post = _post_or_404(slug)
+        form = CommentForm()
+        if form.validate_on_submit():
+            if not current_user.is_authenticated:
+                flash("Sign in to join the conversation.", "warning")
+                return redirect(url_for("auth.login", next=request.path))
+            get_db().comments.insert_one({"post_id": post["_id"], "user_id": ObjectId(current_user.id),
+                "username": current_user.username, "body": form.comment.data.strip(), "created_at": datetime.now(timezone.utc)})
+            flash("Your comment is live.", "success")
+            return redirect(url_for("article", slug=slug, _anchor="comments"))
+        comments = list(get_db().comments.find({"post_id": post["_id"]}).sort("created_at", DESCENDING))
+        return render_template("single-post.html", post=post, comments=comments, form=form)
+
+    @app.route("/single-post", methods=["GET", "POST"])
+    def single_post():
+        post = get_db().posts.find_one({"published": True}, sort=[("created_at", DESCENDING)])
+        if not post:
+            return redirect(url_for("category"))
+        return redirect(url_for("article", slug=post["slug"]))
+
+    @app.route("/write", methods=["GET", "POST"])
+    @login_required
+    def create_post():
+        form = PostForm()
+        if form.validate_on_submit():
+            slug = slugify(form.title.data)
+            base, suffix = slug, 1
+            while get_db().posts.find_one({"slug": slug}):
+                suffix += 1
+                slug = f"{base}-{suffix}"
+            image_url = _save_image(form.image_file.data, "cover") or (form.image_url.data or "").strip()
+            get_db().posts.insert_one(_post_data(form, slug, image_url))
+            flash("Article published." if form.published.data else "Draft saved.", "success")
+            return redirect(url_for("article", slug=slug) if form.published.data else url_for("profile"))
+        return render_template("post_form.html", form=form, title="Write an article")
+
+    @app.route("/articles/<slug>/edit", methods=["GET", "POST"])
+    @login_required
+    def edit_post(slug):
+        post = _post_or_404(slug, include_drafts=True)
+        if str(post.get("author_id")) != current_user.id and not current_user.is_admin:
+            abort(403)
+        form_values = dict(post)
+        if "/static/uploads/" in form_values.get("image_url", ""):
+            form_values["image_url"] = ""
+        form = PostForm(obj=type("Post", (), form_values))
+        if form.validate_on_submit():
+            uploaded_url = _save_image(form.image_file.data, "cover")
+            image_url = uploaded_url or (form.image_url.data or "").strip() or post.get("image_url", "")
+            data = _post_data(form, post["slug"], image_url)
+            data.pop("created_at", None)
+            get_db().posts.update_one({"_id": post["_id"]}, {"$set": data})
+            if uploaded_url and post.get("image_url") != uploaded_url:
+                _delete_local_image(post.get("image_url"))
+            flash("Article updated.", "success")
+            return redirect(url_for("article", slug=post["slug"]) if form.published.data else url_for("profile"))
+        return render_template("post_form.html", form=form, title="Edit article", post=post)
+
+    @app.post("/articles/<slug>/delete")
+    @login_required
+    def delete_post(slug):
+        post = _post_or_404(slug, include_drafts=True)
+        if str(post.get("author_id")) != current_user.id and not current_user.is_admin:
+            abort(403)
+        get_db().comments.delete_many({"post_id": post["_id"]})
+        get_db().posts.delete_one({"_id": post["_id"]})
+        _delete_local_image(post.get("image_url"))
+        flash("Article deleted.", "info")
+        return redirect(url_for("profile"))
+
+    @app.route("/profile", methods=["GET", "POST"])
+    @login_required
+    def profile():
+        database = get_db()
+        user = database.users.find_one({"_id": ObjectId(current_user.id)})
+        form_values = dict(user)
+        if "/static/uploads/" in form_values.get("profile_pic", ""):
+            form_values["profile_pic"] = ""
+        form = ProfileForm(obj=type("Profile", (), form_values))
+        if form.validate_on_submit():
+            conflict = database.users.find_one({"_id": {"$ne": user["_id"]}, "$or": [{"username": form.username.data.lower()}, {"email": form.email.data.lower()}]})
+            if conflict:
+                flash("That username or email is already in use.", "danger")
+            else:
+                uploaded_url = _save_image(form.profile_pic_file.data, "avatar")
+                profile_pic = uploaded_url or (form.profile_pic.data or "").strip() or user.get("profile_pic", "")
+                database.users.update_one({"_id": user["_id"]}, {"$set": {"username": form.username.data.strip().lower(),
+                    "email": form.email.data.strip().lower(), "bio": (form.bio.data or "").strip(), "profile_pic": profile_pic}})
+                if uploaded_url and user.get("profile_pic") != uploaded_url:
+                    _delete_local_image(user.get("profile_pic"))
+                flash("Profile updated.", "success")
+                return redirect(url_for("profile"))
+        posts = list(database.posts.find({"author_id": user["_id"]}).sort("created_at", DESCENDING))
+        return render_template("profile.html", form=form, posts=posts)
+
+    @app.route("/contact", methods=["GET", "POST"])
+    def contact():
+        form = ContactForm()
+        if form.validate_on_submit():
+            get_db().messages.insert_one({"name": form.name.data.strip(), "email": form.email.data.lower().strip(),
+                "subject": form.subject.data.strip(), "message": form.message.data.strip(), "created_at": datetime.now(timezone.utc), "status": "new"})
+            flash("Thanks — your message has reached us.", "success")
+            return redirect(url_for("contact"))
+        return render_template("contact.html", form=form)
+
+    @app.get("/about")
+    def about(): return render_template("about.html")
+    @app.get("/privacy-policy")
+    def privacy_policy(): return render_template("privacy_policy.html")
+
+    def _post_data(form, slug, image_url):
+        return {"title": form.title.data.strip(), "slug": slug, "category": form.category.data.strip().title(),
+            "excerpt": form.excerpt.data.strip(), "body": form.body.data.strip(), "image_url": image_url,
+            "published": form.published.data, "author_id": ObjectId(current_user.id), "author_name": current_user.username,
+            "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc)}
+
+
+def register_errors(app):
+    @app.errorhandler(403)
+    def forbidden(error): return render_template("error.html", code=403, title="Not allowed", message="You don't have permission to do that."), 403
+    @app.errorhandler(404)
+    def not_found(error): return render_template("error.html", code=404, title="Page not found", message="That page wandered off the map."), 404
+    @app.errorhandler(413)
+    def too_large(error): return render_template("error.html", code=413, title="Request too large", message="Please submit a smaller request."), 413
+    @app.errorhandler(PyMongoError)
+    def database_error(error):
+        app.logger.exception("Database request failed")
+        return render_template("error.html", code=503, title="We'll be right back", message="The content service is temporarily unavailable."), 503
+
+
+app = create_app()
 
 if __name__ == "__main__":
-    app.run(debug=True, port=9000)
+    app.run(debug=os.getenv("FLASK_DEBUG") == "1", port=int(os.getenv("PORT", "9000")))

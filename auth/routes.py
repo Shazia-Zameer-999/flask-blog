@@ -1,206 +1,143 @@
-from flask import render_template, redirect, url_for,request
-from werkzeug.security import generate_password_hash,check_password_hash
-from flask_login import login_user, logout_user
-from model.user import User
-from forms.forms import LoginForm, SignupForm
-from database.db import db
-from auth import auth_bp
-from extensions import oauth,loginManager
-from bson import ObjectId
-import requests
-from flask import current_app as app
+from datetime import datetime, timezone
+from urllib.parse import urljoin, urlparse
 
+from bson import ObjectId
+from flask import current_app, flash, redirect, render_template, request, url_for
+from flask_login import current_user, login_user, logout_user
+from pymongo.errors import DuplicateKeyError
+from werkzeug.security import check_password_hash, generate_password_hash
+
+from auth import auth_bp
+from database.db import get_db
+from extensions import loginManager, oauth
+from forms.forms import LoginForm, SignupForm
+from model.user import User
+
+
+def _safe_next(target):
+    host = urlparse(request.host_url)
+    candidate = urlparse(urljoin(request.host_url, target or ""))
+    return candidate.scheme in {"http", "https"} and candidate.netloc == host.netloc
 
 
 @loginManager.user_loader
 def load_user(user_id):
-    if user_id:
-        user_data = db.users.find_one({"_id": ObjectId(user_id)})
-        return User(user_data) if user_data else None
-    else:
-        print("user_id not found")
+    try:
+        data = get_db().users.find_one({"_id": ObjectId(user_id)})
+    except (ValueError, TypeError):
+        return None
+    return User(data) if data else None
+
+
 @auth_bp.route("/signup", methods=["GET", "POST"])
 def signup():
+    if current_user.is_authenticated:
+        return redirect(url_for("profile"))
     form = SignupForm()
     if form.validate_on_submit():
-        username = form.username.data.lower()
-        password = form.password.data
-        hashed_password = generate_password_hash(
-            password, method="scrypt", salt_length=16
-        )
-        existing_user = db.users.find_one({"username": username})
-        if existing_user:
-            return redirect(url_for("auth.signup"))
-        signup_data = db.users.insert_one(
-            {
+        username = form.username.data.strip().lower()
+        email = form.email.data.strip().lower()
+        try:
+            result = get_db().users.insert_one({
                 "username": username,
-                "password": hashed_password,
+                "email": email,
+                "password": generate_password_hash(form.password.data, method="scrypt"),
                 "provider": "local",
-                "provider_id": "none",
-                "email": "none",
-                "profile_pic": "none",
-            }
-        )
-        return redirect(url_for("auth.login"))
-    return render_template("signup.html", form=form)
+                "provider_id": f"local:{username}",
+                "profile_pic": "",
+                "bio": "",
+                "role": "reader",
+                "created_at": datetime.now(timezone.utc),
+            })
+        except DuplicateKeyError:
+            flash("That username or email is already registered.", "danger")
+        else:
+            login_user(User(get_db().users.find_one({"_id": result.inserted_id})))
+            flash("Welcome to ShazBlog — your account is ready.", "success")
+            return redirect(url_for("profile"))
+    return render_template("auth.html", form=form, mode="signup")
+
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
+    if current_user.is_authenticated:
+        return redirect(url_for("profile"))
     form = LoginForm()
     if form.validate_on_submit():
-        username = form.username.data
-        password = form.password.data
-        user_data = db.users.find_one({"username": username})
-        if user_data and check_password_hash(user_data["password"], password):
-            user = User(user_data)
-            login_user(user)
-            return redirect(url_for("index"))
-    return render_template("login.html", form=form)
+        identity = form.identity.data.strip().lower()
+        data = get_db().users.find_one({"$or": [{"username": identity}, {"email": identity}], "provider": "local"})
+        if data and data.get("password") and check_password_hash(data["password"], form.password.data):
+            login_user(User(data), remember=form.remember.data)
+            destination = request.args.get("next")
+            return redirect(destination if _safe_next(destination) else url_for("profile"))
+        flash("We couldn't match those credentials. Please try again.", "danger")
+    providers = [name for name in ("google", "github", "linkedin", "facebook") if current_app.config.get(f"{name.upper()}_CLIENT_ID")]
+    return render_template("auth.html", form=form, mode="login", providers=providers)
 
-@auth_bp.route("/logout")
+
+@auth_bp.post("/logout")
 def logout():
     logout_user()
-    return redirect(url_for("auth.login"))
-
-@auth_bp.route("/login/google", methods=["GET", "POST"])
-def google_auth():
-    redirect_uri = url_for("auth.google_callback", _external=True)
-    return oauth.google.authorize_redirect(redirect_uri)
-
-@auth_bp.route("/auth/google/callback")
-def google_callback():
-    code = request.args.get("code")
-    token = oauth.google.authorize_access_token()
-    response = oauth.google.get("https://openidconnect.googleapis.com/v1/userinfo")
-    user_info = response.json()
-    user_data = db.users.find_one(
-        {"provider": "google", "provider_id": user_info.get("sub")}
-    )
-    if not user_data:
-        stored_user = db.users.insert_one(
-            {
-                "provider": "google",
-                "provider_id": user_info.get("sub"),
-                "username": user_info.get("name"),
-                "email": user_info.get("email"),
-                "profile_pic": user_info.get("picture"),
-            }
-        )
-        user_data = db.users.find_one({"username": user_info["name"]})
-
-    user = User(user_data)
-    login_user(user)
-    return redirect(url_for("index"))
-@auth_bp.route("/login/linkedin", methods=["GET", "POST"])
-def linkedin_auth():
-    redirect_uri = url_for("auth.linkedin_callback", _external=True)
-    return oauth.linkedin.authorize_redirect(redirect_uri)
-
-
-@auth_bp.route("/auth/linkedin/callback")
-def linkedin_callback():
-    code = request.args.get("code")
-    redirect_uri = url_for("auth.linkedin_callback", _external=True)
-    token_response = requests.post(
-        "https://www.linkedin.com/oauth/v2/accessToken",
-        data={
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": redirect_uri,
-            "client_id": app.config["LINKEDIN_CLIENT_ID"],
-            "client_secret": app.config["LINKEDIN_CLIENT_SECRET"],
-        },
-    )
-    token_data = token_response.json()
-    access_token = token_data["access_token"]
-    user_response = requests.get(
-        "https://api.linkedin.com/v2/userinfo",
-        headers={"Authorization": f"Bearer {access_token}"},
-    )
-    user_info = user_response.json()
-    user_data = db.users.find_one(
-        {"provider": "linkedin", "provider_id": user_info.get("sub")}
-    )
-    if not user_data:
-        stored_user = db.users.insert_one(
-            {
-                "provider": "linkedin",
-                "provider_id": user_info.get("sub"),
-                "username": user_info.get("name"),
-                "email": user_info.get("email"),
-                "profile_pic": user_info.get("picture"),
-            }
-        )
-        user_data = db.users.find_one({"username": user_info["name"]})
-
-    user = User(user_data)
-    login_user(user)
+    flash("You've been signed out safely.", "info")
     return redirect(url_for("index"))
 
 
-@auth_bp.route("/login/github")
-def github_auth():
-    redirect_uri = url_for("auth.github_callback", _external=True)
-    return oauth.github.authorize_redirect(redirect_uri)
+def _oauth_start(provider):
+    if not current_app.config.get(f"{provider.upper()}_CLIENT_ID"):
+        flash(f"{provider.title()} sign-in is not configured.", "warning")
+        return redirect(url_for("auth.login"))
+    return oauth.create_client(provider).authorize_redirect(url_for(f"auth.{provider}_callback", _external=True))
 
 
-@auth_bp.route("/auth/github/callback")
-def github_callback():
-    code = request.args.get("code")
-    token = oauth.github.authorize_access_token()
-    response = oauth.github.get("https://api.github.com/user")
-    user_info = response.json()
-    print("user_info", user_info)
-    existing_user = db.users.find_one(
-        {"provider": "github", "provider_id": user_info.get("id")}
-    )
-    if not existing_user:
-        db.users.insert_one(
-            {
-                "provider": "github",
-                "provider_id": user_info.get("id"),
-                "username": user_info.get("name"),
-                "email": user_info.get("email"),
-                "profile_pic": user_info.get("avatar_url"),
-            }
-        )
-    user_data = db.users.find_one(
-        {"provider": "github", "provider_id": user_info.get("id")}
-    )
-    user = User(user_data)
-    login_user(user)
-    return redirect(url_for("index"))
+def _oauth_finish(provider, userinfo_url=None):
+    client = oauth.create_client(provider)
+    try:
+        token = client.authorize_access_token()
+        info = token.get("userinfo") or client.get(userinfo_url).json()
+        provider_id = str(info.get("sub") or info.get("id"))
+        if not provider_id or provider_id == "None":
+            raise ValueError("No provider user ID returned")
+    except Exception:
+        current_app.logger.exception("OAuth callback failed for %s", provider)
+        flash("Social sign-in could not be completed. Please try another method.", "danger")
+        return redirect(url_for("auth.login"))
+    database = get_db()
+    email = (info.get("email") or "").lower()
+    identities = [{"provider": provider, "provider_id": provider_id}]
+    if email:
+        identities.append({"email": email})
+    data = database.users.find_one({"$or": identities})
+    if not data:
+        base = (info.get("preferred_username") or info.get("name") or f"{provider}-reader").strip().lower().replace(" ", "-")[:24]
+        username = base
+        suffix = 1
+        while database.users.find_one({"username": username}):
+            suffix += 1
+            username = f"{base[:20]}-{suffix}"
+        avatar = info.get("picture") or info.get("avatar_url") or ""
+        if isinstance(avatar, dict):
+            avatar = avatar.get("data", {}).get("url", "")
+        result = database.users.insert_one({"provider": provider, "provider_id": provider_id, "username": username,
+            "email": email, "profile_pic": avatar, "bio": "", "role": "reader",
+            "created_at": datetime.now(timezone.utc)})
+        data = database.users.find_one({"_id": result.inserted_id})
+    login_user(User(data))
+    return redirect(url_for("profile"))
 
 
-@auth_bp.route("/login/facebook", methods=["GET", "POST"])
-def facebook_auth():
-    redirect_uri = url_for("auth.facebook_callback", _external=True)
-    return oauth.facebook.authorize_redirect(redirect_uri)
-
-
-@auth_bp.route("/auth/facebook/callback")
-def facebook_callback():
-    token = oauth.facebook.authorize_access_token()
-
-    response = oauth.facebook.get("me?fields=id,name,email,picture")
-
-    user_info = response.json()
-
-    user_data = db.users.find_one(
-        {"provider": "facebook", "provider_id": user_info.get("id")}
-    )
-    if not user_data:
-        stored_user = db.users.insert_one(
-            {
-                "provider": "facebook",
-                "provider_id": user_info.get("id"),
-                "username": user_info.get("name"),
-                "email": user_info.get("email"),
-                "profile_pic": user_info["picture"]["data"]["url"],
-            }
-        )
-        user_data = db.users.find_one({"username": user_info["name"]})
-
-    user = User(user_data)
-    login_user(user)
-    return redirect(url_for("index"))
+@auth_bp.get("/login/google")
+def google_auth(): return _oauth_start("google")
+@auth_bp.get("/auth/google/callback")
+def google_callback(): return _oauth_finish("google", "https://openidconnect.googleapis.com/v1/userinfo")
+@auth_bp.get("/login/github")
+def github_auth(): return _oauth_start("github")
+@auth_bp.get("/auth/github/callback")
+def github_callback(): return _oauth_finish("github", "https://api.github.com/user")
+@auth_bp.get("/login/linkedin")
+def linkedin_auth(): return _oauth_start("linkedin")
+@auth_bp.get("/auth/linkedin/callback")
+def linkedin_callback(): return _oauth_finish("linkedin", "https://api.linkedin.com/v2/userinfo")
+@auth_bp.get("/login/facebook")
+def facebook_auth(): return _oauth_start("facebook")
+@auth_bp.get("/auth/facebook/callback")
+def facebook_callback(): return _oauth_finish("facebook", "me?fields=id,name,email,picture")
