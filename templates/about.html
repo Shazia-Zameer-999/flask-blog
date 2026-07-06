@@ -1,1 +1,63 @@
-{% extends 'base.html' %}{% block title %}About{% endblock %}{% block content %}<section class="page-hero about-hero"><div class="shell"><span class="eyebrow">Why we’re here</span><h1>Good ideas deserve room to breathe.</h1><p>ShazBlog is a home for useful, human writing in a web that too often rewards noise.</p></div></section><section class="section"><div class="shell about-grid"><img src="{{ url_for('static', filename='img/about-company-1.jpg') }}" alt="A collaborative editorial workspace"><div><span class="eyebrow">Our point of view</span><h2>Clarity over clutter.</h2><p>We believe writing can be rigorous without being cold, practical without being dull, and ambitious without shouting. Every story should leave you with something worth carrying into your day.</p><p>Our community brings together builders, designers, thinkers, and lifelong learners. Different disciplines; the same honest curiosity.</p><div class="values"><div><b>01</b><span><strong>Useful</strong>Make every minute of attention count.</span></div><div><b>02</b><span><strong>Human</strong>Write like a person, not a content machine.</span></div><div><b>03</b><span><strong>Open</strong>Welcome questions and better ideas.</span></div></div></div></div></section><section class="cta"><div class="shell cta-inner"><div><span class="eyebrow">Join us</span><h2>Add your voice to the journal.</h2></div><a class="button button-light" href="{{ url_for('auth.signup') }}">Create an account</a></div></section>{% endblock %}
+{% extends 'base.html' %}{% block title %}About{% endblock %}{% block content %}
+<section class="page-hero about-hero">
+  <div class="shell">
+    <span class="eyebrow">Why we’re here</span>
+    <h1>Good ideas deserve room to breathe.</h1>
+    <p>
+      ShazBlog is a home for useful, human writing in a web that too often
+      rewards noise.
+    </p>
+  </div>
+</section>
+<section class="section">
+  <div class="shell about-grid">
+    <img
+      src="{{ url_for('static', filename='img/about-company-1.jpg') }}"
+      alt="A collaborative editorial workspace"
+    />
+    <div>
+      <span class="eyebrow">Our point of view</span>
+      <h2>Clarity over clutter.</h2>
+      <p>
+        We believe writing can be rigorous without being cold, practical without
+        being dull, and ambitious without shouting. Every story should leave you
+        with something worth carrying into your day.
+      </p>
+      <p>
+        Our community brings together builders, designers, thinkers, and
+        lifelong learners. Different disciplines; the same honest curiosity.
+      </p>
+      <div class="values">
+        <div>
+          <b>01</b
+          ><span
+            ><strong>Useful</strong>Make every minute of attention count.</span
+          >
+        </div>
+        <div>
+          <b>02</b
+          ><span
+            ><strong>Human</strong>Write like a person, not a content
+            machine.</span
+          >
+        </div>
+        <div>
+          <b>03</b
+          ><span><strong>Open</strong>Welcome questions and better ideas.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<section class="cta">
+  <div class="shell cta-inner">
+    <div>
+      <span class="eyebrow">Join us</span>
+      <h2>Add your voice to the journal.</h2>
+    </div>
+    <a class="button button-light" href="{{ url_for('auth.signup') }}"
+      >Create an account</a
+    >
+  </div>
+</section>
+{% endblock %}
