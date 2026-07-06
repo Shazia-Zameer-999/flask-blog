@@ -96,6 +96,26 @@ def _post_or_404(slug, include_drafts=False):
     return post
 
 
+def _attach_author_profiles(posts):
+    """Attach each author's current name and avatar without per-post queries."""
+    author_ids = {post.get("author_id") for post in posts if isinstance(post.get("author_id"), ObjectId)}
+    if not author_ids:
+        return posts
+    profiles = {
+        user["_id"]: user
+        for user in get_db().users.find(
+            {"_id": {"$in": list(author_ids)}},
+            {"username": 1, "profile_pic": 1},
+        )
+    }
+    for post in posts:
+        profile = profiles.get(post.get("author_id"))
+        if profile:
+            post["author_name"] = profile.get("username", post.get("author_name", "Reader"))
+            post["author_avatar"] = profile.get("profile_pic", "")
+    return posts
+
+
 def _save_image(file_storage, prefix):
     """Persist a validated image in MongoDB so it works on serverless hosts."""
     if not file_storage or not file_storage.filename:
@@ -136,7 +156,7 @@ def register_routes(app):
 
     @app.get("/")
     def index():
-        posts = list(get_db().posts.find({"published": True}).sort("created_at", DESCENDING).limit(7))
+        posts = _attach_author_profiles(list(get_db().posts.find({"published": True}).sort("created_at", DESCENDING).limit(7)))
         return render_template("index.html", posts=posts, featured=posts[0] if posts else None)
 
     @app.get("/articles")
@@ -152,7 +172,7 @@ def register_routes(app):
             query["category"] = category_name
         per_page = 6
         total = get_db().posts.count_documents(query)
-        posts = list(get_db().posts.find(query).sort("created_at", DESCENDING).skip((page - 1) * per_page).limit(per_page))
+        posts = _attach_author_profiles(list(get_db().posts.find(query).sort("created_at", DESCENDING).skip((page - 1) * per_page).limit(per_page)))
         categories = get_db().posts.distinct("category", {"published": True})
         return render_template("category.html", posts=posts, categories=sorted(filter(None, categories)), page=page,
             pages=max(1, (total + per_page - 1) // per_page), total=total, query_text=query_text, selected_category=category_name)
@@ -160,6 +180,7 @@ def register_routes(app):
     @app.route("/articles/<slug>", methods=["GET", "POST"])
     def article(slug):
         post = _post_or_404(slug)
+        _attach_author_profiles([post])
         form = CommentForm()
         if form.validate_on_submit():
             if not current_user.is_authenticated:
@@ -287,6 +308,7 @@ def register_routes(app):
         return {"title": form.title.data.strip(), "slug": slug, "category": form.category.data.strip().title(),
             "excerpt": form.excerpt.data.strip(), "body": form.body.data.strip(), "image_url": image_url,
             "published": form.published.data, "author_id": ObjectId(current_user.id), "author_name": current_user.username,
+            "author_avatar": current_user.profile_pic,
             "created_at": datetime.now(timezone.utc), "updated_at": datetime.now(timezone.utc)}
 
 
