@@ -162,26 +162,11 @@ textarea {
 .button-top:hover{
     color: #fff !important;
 }
-/* Placed first */
-.button-light {
-  background: white;
-  color: var(--brand-dark) !important;
-} 
-
-/* Placed last so it wins the tie-breaker */
-.button-bottom {
+.button-bottom{
     color: #fff !important;
 }
-.button-bottom:hover {
-    color: #000 !important;
-}
-
-/* Placed last so it wins the tie-breaker */
-.button-bottom {
-    color: #fff !important;
-}
-.button-bottom:hover {
-    color: #000 !important;
+.button-bottom:hover{
+    color: #f8f6f6 !important;
 }
 .button-small {
   padding: 9px 15px !important;
@@ -189,7 +174,10 @@ textarea {
 .button-full {
   width: 100%;
 }
-
+.button-light {
+  background: white;
+  color: var(--brand-dark) !important;
+}
 .text-link {
   font-weight: 700;
   color: var(--brand);
