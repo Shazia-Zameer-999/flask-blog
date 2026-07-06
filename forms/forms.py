@@ -47,6 +47,15 @@ class ProfileForm(FlaskForm):
     )
     submit = SubmitField("Save profile")
 
+    def validate(self, extra_validators=None):
+        valid = super().validate(extra_validators)
+        if self.profile_pic.data and self.profile_pic_file.data and self.profile_pic_file.data.filename:
+            message = "Choose either an avatar URL or a computer file, not both."
+            self.profile_pic.errors.append(message)
+            self.profile_pic_file.errors.append(message)
+            return False
+        return valid
+
 
 class PostForm(FlaskForm):
     title = StringField("Title", validators=[DataRequired(), Length(min=5, max=140)])
@@ -60,6 +69,15 @@ class PostForm(FlaskForm):
     )
     published = BooleanField("Publish now", default=True)
     submit = SubmitField("Save article")
+
+    def validate(self, extra_validators=None):
+        valid = super().validate(extra_validators)
+        if self.image_url.data and self.image_file.data and self.image_file.data.filename:
+            message = "Choose either a cover URL or a computer file, not both."
+            self.image_url.errors.append(message)
+            self.image_file.errors.append(message)
+            return False
+        return valid
 
 
 class CommentForm(FlaskForm):

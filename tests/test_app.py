@@ -51,3 +51,18 @@ def test_computer_image_upload_validates_real_file_content(app):
         form = PostForm()
         assert not form.validate()
         assert "not a valid image" in form.image_file.errors[0]
+
+
+def test_image_url_and_computer_file_are_mutually_exclusive(app):
+    data = {
+        "title": "A useful article",
+        "category": "Design",
+        "excerpt": "A sufficiently detailed article summary.",
+        "body": "A" * 120,
+        "image_url": "https://example.com/cover.png",
+        "image_file": (BytesIO(b"\x89PNG\r\n\x1a\n" + b"0" * 20), "cover.png"),
+    }
+    with app.test_request_context("/write", method="POST", data=data):
+        form = PostForm()
+        assert not form.validate()
+        assert "either a cover URL" in form.image_url.errors[-1]

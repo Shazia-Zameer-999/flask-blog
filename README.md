@@ -21,7 +21,7 @@ A production-minded publishing application built with Flask and MongoDB. Readers
 
 For production, run `gunicorn 'app:app'`, use an HTTPS reverse proxy, set a strong secret, and provide a managed MongoDB connection string. OAuth buttons only appear for providers with configured credentials.
 
-Uploaded JPG, PNG, GIF, and WebP files are stored in `static/uploads` and are capped by the 2 MB request limit. For horizontally scaled production deployments, mount persistent shared storage or replace the local save helper with object storage such as S3.
+Uploaded JPG, PNG, GIF, and WebP files are stored through MongoDB GridFS and are capped by the 2 MB request limit. This keeps uploads persistent across local and serverless deployments without writing to Vercel's application filesystem.
 
 ## Data collections
 

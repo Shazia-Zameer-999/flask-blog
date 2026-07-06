@@ -1,17 +1,18 @@
 import os
 import re
 import unicodedata
-import uuid
+from io import BytesIO
 from datetime import datetime, timezone
 
 from bson import ObjectId
 from bson.errors import InvalidId
 from dotenv import load_dotenv
-from flask import Flask, abort, current_app, flash, redirect, render_template, request, url_for
+from flask import Flask, abort, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
+from gridfs import GridFS
+from gridfs.errors import NoFile
 from pymongo import DESCENDING
 from pymongo.errors import PyMongoError
-from werkzeug.utils import secure_filename
 
 from auth import auth_bp
 from database.db import get_db, init_indexes
@@ -33,7 +34,6 @@ def create_app(test_config=None):
         MONGO_URI=os.getenv("MONGO_URI"),
         MONGO_DB_NAME=os.getenv("MONGO_DB_NAME", "content"),
         MAX_CONTENT_LENGTH=2 * 1024 * 1024,
-        UPLOAD_FOLDER=os.path.join(app.static_folder, "uploads"),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=os.getenv("FLASK_ENV") == "production",
@@ -45,8 +45,6 @@ def create_app(test_config=None):
         app.config[f"{provider}_CLIENT_SECRET"] = os.getenv(f"{provider}_CLIENT_SECRET")
     if test_config:
         app.config.update(test_config)
-    os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
-
     loginManager.init_app(app)
     loginManager.login_view = "auth.login"
     loginManager.login_message_category = "warning"
@@ -99,28 +97,43 @@ def _post_or_404(slug, include_drafts=False):
 
 
 def _save_image(file_storage, prefix):
-    """Save a validated image with a non-guessable name and return its public URL."""
+    """Persist a validated image in MongoDB so it works on serverless hosts."""
     if not file_storage or not file_storage.filename:
         return None
-    original = secure_filename(file_storage.filename)
-    extension = os.path.splitext(original)[1].lower()
-    filename = f"{prefix}-{uuid.uuid4().hex}{extension}"
-    file_storage.save(os.path.join(current_app.config["UPLOAD_FOLDER"], filename))
-    return url_for("static", filename=f"uploads/{filename}")
+    extension = os.path.splitext(file_storage.filename)[1].lower()
+    mime_types = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}
+    image_id = GridFS(get_db(), collection="images").put(
+        file_storage.stream,
+        filename=f"{prefix}{extension}",
+        content_type=mime_types[extension],
+        uploaded_at=datetime.now(timezone.utc),
+    )
+    return url_for("media", image_id=str(image_id))
 
 
-def _delete_local_image(image_url):
-    """Remove only files managed by this app; external URLs are never touched."""
-    marker = "/static/uploads/"
+def _delete_image(image_url):
+    """Remove only MongoDB images managed by this app; external URLs are untouched."""
+    marker = "/media/"
     if not image_url or marker not in image_url:
         return
-    filename = secure_filename(image_url.rsplit(marker, 1)[1].split("?", 1)[0])
-    path = os.path.join(current_app.config["UPLOAD_FOLDER"], filename)
-    if os.path.isfile(path):
-        os.remove(path)
+    try:
+        GridFS(get_db(), collection="images").delete(ObjectId(image_url.rsplit(marker, 1)[1].split("?", 1)[0]))
+    except (InvalidId, TypeError):
+        return
 
 
 def register_routes(app):
+    @app.get("/media/<image_id>")
+    def media(image_id):
+        try:
+            image = GridFS(get_db(), collection="images").get(_oid(image_id))
+        except NoFile:
+            abort(404)
+        response = send_file(BytesIO(image.read()), mimetype=image.content_type, max_age=31536000)
+        response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'none'; sandbox"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
     @app.get("/")
     def index():
         posts = list(get_db().posts.find({"published": True}).sort("created_at", DESCENDING).limit(7))
@@ -153,10 +166,24 @@ def register_routes(app):
                 flash("Sign in to join the conversation.", "warning")
                 return redirect(url_for("auth.login", next=request.path))
             get_db().comments.insert_one({"post_id": post["_id"], "user_id": ObjectId(current_user.id),
-                "username": current_user.username, "body": form.comment.data.strip(), "created_at": datetime.now(timezone.utc)})
+                "username": current_user.username, "avatar_url": current_user.profile_pic,
+                "body": form.comment.data.strip(), "created_at": datetime.now(timezone.utc)})
             flash("Your comment is live.", "success")
             return redirect(url_for("article", slug=slug, _anchor="comments"))
         comments = list(get_db().comments.find({"post_id": post["_id"]}).sort("created_at", DESCENDING))
+        commenter_ids = {comment.get("user_id") for comment in comments if isinstance(comment.get("user_id"), ObjectId)}
+        commenter_profiles = {
+            user["_id"]: user
+            for user in get_db().users.find(
+                {"_id": {"$in": list(commenter_ids)}},
+                {"username": 1, "profile_pic": 1},
+            )
+        } if commenter_ids else {}
+        for comment in comments:
+            profile = commenter_profiles.get(comment.get("user_id"))
+            if profile:
+                comment["username"] = profile.get("username", comment.get("username", "Reader"))
+                comment["avatar_url"] = profile.get("profile_pic", "")
         return render_template("single-post.html", post=post, comments=comments, form=form)
 
     @app.route("/single-post", methods=["GET", "POST"])
@@ -189,7 +216,7 @@ def register_routes(app):
         if str(post.get("author_id")) != current_user.id and not current_user.is_admin:
             abort(403)
         form_values = dict(post)
-        if "/static/uploads/" in form_values.get("image_url", ""):
+        if "/media/" in form_values.get("image_url", ""):
             form_values["image_url"] = ""
         form = PostForm(obj=type("Post", (), form_values))
         if form.validate_on_submit():
@@ -199,7 +226,7 @@ def register_routes(app):
             data.pop("created_at", None)
             get_db().posts.update_one({"_id": post["_id"]}, {"$set": data})
             if uploaded_url and post.get("image_url") != uploaded_url:
-                _delete_local_image(post.get("image_url"))
+                _delete_image(post.get("image_url"))
             flash("Article updated.", "success")
             return redirect(url_for("article", slug=post["slug"]) if form.published.data else url_for("profile"))
         return render_template("post_form.html", form=form, title="Edit article", post=post)
@@ -212,7 +239,7 @@ def register_routes(app):
             abort(403)
         get_db().comments.delete_many({"post_id": post["_id"]})
         get_db().posts.delete_one({"_id": post["_id"]})
-        _delete_local_image(post.get("image_url"))
+        _delete_image(post.get("image_url"))
         flash("Article deleted.", "info")
         return redirect(url_for("profile"))
 
@@ -222,7 +249,7 @@ def register_routes(app):
         database = get_db()
         user = database.users.find_one({"_id": ObjectId(current_user.id)})
         form_values = dict(user)
-        if "/static/uploads/" in form_values.get("profile_pic", ""):
+        if "/media/" in form_values.get("profile_pic", ""):
             form_values["profile_pic"] = ""
         form = ProfileForm(obj=type("Profile", (), form_values))
         if form.validate_on_submit():
@@ -235,7 +262,7 @@ def register_routes(app):
                 database.users.update_one({"_id": user["_id"]}, {"$set": {"username": form.username.data.strip().lower(),
                     "email": form.email.data.strip().lower(), "bio": (form.bio.data or "").strip(), "profile_pic": profile_pic}})
                 if uploaded_url and user.get("profile_pic") != uploaded_url:
-                    _delete_local_image(user.get("profile_pic"))
+                    _delete_image(user.get("profile_pic"))
                 flash("Profile updated.", "success")
                 return redirect(url_for("profile"))
         posts = list(database.posts.find({"author_id": user["_id"]}).sort("created_at", DESCENDING))
