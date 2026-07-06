@@ -1,8 +1,10 @@
 from datetime import datetime, timezone
 from urllib.parse import urljoin, urlparse
+from authlib.common.security import generate_token
+from authlib.integrations.base_client import OAuthError
 
 from bson import ObjectId
-from flask import current_app, flash, redirect, render_template, request, url_for
+from flask import current_app, flash, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_user, logout_user
 from pymongo.errors import DuplicateKeyError
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -82,17 +84,46 @@ def logout():
     return redirect(url_for("index"))
 
 
+OIDC_PROVIDERS = {"google", "linkedin"}
+def _fetch_token_no_id_verification(client):
+    """LinkedIn's OIDC id_token frequently omits the 'nonce' claim even when
+    one was requested, which makes Authlib's built-in ID-token verification
+    raise MissingClaimError. We don't need ID-token verification here since
+    we fetch the profile from the userinfo REST endpoint directly, so fetch
+    the access token without triggering that automatic check."""
+    if request.method == "GET":
+        error = request.args.get("error")
+        if error:
+            raise OAuthError(error=error, description=request.args.get("error_description"))
+        params = {"code": request.args.get("code"), "state": request.args.get("state")}
+    else:
+        params = {"code": request.form.get("code"), "state": request.form.get("state")}
+    state_data = client.framework.get_state_data(session, params.get("state"))
+    client.framework.clear_state_data(session, params.get("state"))
+    params = client._format_state_params(state_data, params)
+    token = client.fetch_access_token(**params)
+    client.token = token
+    return token
 def _oauth_start(provider):
     if not current_app.config.get(f"{provider.upper()}_CLIENT_ID"):
         flash(f"{provider.title()} sign-in is not configured.", "warning")
         return redirect(url_for("auth.login"))
-    return oauth.create_client(provider).authorize_redirect(url_for(f"auth.{provider}_callback", _external=True))
+    client = oauth.create_client(provider)
+    redirect_uri = url_for(f"auth.{provider}_callback", _external=True)
+    if provider in OIDC_PROVIDERS:
+        nonce = generate_token()
+        session[f"{provider}_nonce"] = nonce  # optional bookkeeping; Authlib manages its own copy internally
+        return client.authorize_redirect(redirect_uri, nonce=nonce)
+    return client.authorize_redirect(redirect_uri)
 
 
 def _oauth_finish(provider, userinfo_url=None):
     client = oauth.create_client(provider)
     try:
-        token = client.authorize_access_token()
+        if provider == "linkedin":
+            token = _fetch_token_no_id_verification(client)
+        else:
+            token = client.authorize_access_token()
         info = token.get("userinfo") or client.get(userinfo_url).json()
         provider_id = str(info.get("sub") or info.get("id"))
         if not provider_id or provider_id == "None":

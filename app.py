@@ -71,7 +71,13 @@ def create_app(test_config=None):
 def _register_oauth(app):
     configs = {
         "google": dict(server_metadata_url="https://accounts.google.com/.well-known/openid-configuration", client_kwargs={"scope": "openid email profile"}),
-        "linkedin": dict(server_metadata_url="https://www.linkedin.com/oauth/.well-known/openid-configuration", client_kwargs={"scope": "openid profile email"}),
+        "linkedin": dict(
+            server_metadata_url="https://www.linkedin.com/oauth/.well-known/openid-configuration",
+            client_kwargs={
+                "scope": "openid profile email",
+            },
+            token_endpoint_auth_method="client_secret_post",
+        ),
         "github": dict(access_token_url="https://github.com/login/oauth/access_token", authorize_url="https://github.com/login/oauth/authorize", api_base_url="https://api.github.com/", client_kwargs={"scope": "read:user user:email"}),
         "facebook": dict(access_token_url="https://graph.facebook.com/v22.0/oauth/access_token", authorize_url="https://www.facebook.com/v22.0/dialog/oauth", api_base_url="https://graph.facebook.com/v22.0/", client_kwargs={"scope": "email public_profile"}),
     }
@@ -239,7 +245,7 @@ def register_routes(app):
         form_values = dict(post)
         if "/media/" in form_values.get("image_url", ""):
             form_values["image_url"] = ""
-        form = PostForm(obj=type("Post", (), form_values))
+        form = PostForm(obj=type("Post", (), form_values) if request.method == "GET" else None)
         if form.validate_on_submit():
             uploaded_url = _save_image(form.image_file.data, "cover")
             image_url = uploaded_url or (form.image_url.data or "").strip() or post.get("image_url", "")
@@ -272,7 +278,7 @@ def register_routes(app):
         form_values = dict(user)
         if "/media/" in form_values.get("profile_pic", ""):
             form_values["profile_pic"] = ""
-        form = ProfileForm(obj=type("Profile", (), form_values))
+        form = ProfileForm(obj=type("Profile", (), form_values) if request.method == "GET" else None)
         if form.validate_on_submit():
             conflict = database.users.find_one({"_id": {"$ne": user["_id"]}, "$or": [{"username": form.username.data.lower()}, {"email": form.email.data.lower()}]})
             if conflict:
